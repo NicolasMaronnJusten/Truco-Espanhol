@@ -1,0 +1,72 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color: #f8f3e8;
+  background: #07130f;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background: linear-gradient(135deg, #07130f 0%, #10251c 52%, #271814 100%);
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: 3px solid rgba(252, 211, 77, 0.7);
+  outline-offset: 2px;
+}
+
+.felt-panel {
+  border: 1px solid rgba(248, 243, 232, 0.14);
+  background: rgba(15, 36, 27, 0.78);
+  box-shadow: 0 18px 40px rgba(3, 8, 6, 0.34);
+  backdrop-filter: blur(12px);
+}
+
+.table-surface {
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    #163427;
+  background-size: 26px 26px;
+}
+
+.playing-card {
+  aspect-ratio: 2.35 / 3.35;
+  min-width: 4.25rem;
+  width: clamp(4.25rem, 18vw, 7.4rem);
+}
+
+.playing-card-compact {
+  min-width: 3rem;
+  width: clamp(3rem, 12vw, 4.75rem);
+}
+
+.card-back {
+  background:
+    linear-gradient(135deg, rgba(255, 250, 240, 0.22) 25%, transparent 25%) 0 0 / 18px 18px,
+    linear-gradient(225deg, rgba(255, 250, 240, 0.2) 25%, transparent 25%) 0 0 / 18px 18px,
+    #7f1d1d;
+}
