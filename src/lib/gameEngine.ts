@@ -30,6 +30,33 @@ function getActivePlayers(players: Player[]): Player[] {
   return players.filter((player) => player.isAlive && !player.isSpectator);
 }
 
+function getReplacementHostId(players: Player[], currentHostId: string): string {
+  const candidates = players.filter((player) => player.id !== currentHostId);
+
+  return (
+    candidates.find(
+      (player) =>
+        !player.isSpectator &&
+        player.isConnected &&
+        !player.isInactive &&
+        !player.pendingKick
+    )?.id ??
+    candidates.find((player) => !player.isSpectator && !player.pendingKick)?.id ??
+    candidates.find(
+      (player) => player.isConnected && !player.isInactive && !player.pendingKick
+    )?.id ??
+    candidates[0]?.id ??
+    currentHostId
+  );
+}
+
+function syncHostFlags(players: Player[], hostId: string): Player[] {
+  return players.map((player) => ({
+    ...player,
+    isHost: player.id === hostId,
+  }));
+}
+
 export function getBidTimeLimitSeconds(snapshot: GameSnapshot): number {
   const value = snapshot.room.bidTimeLimitSeconds;
   return Number.isFinite(value) && value >= 5 ? value : DEFAULT_BID_TIME_LIMIT_SECONDS;
@@ -486,6 +513,72 @@ export function kickPlayer(
   return nextSnapshot;
 }
 
+export function leavePlayer(snapshot: GameSnapshot, playerId: string): GameSnapshot {
+  const draft = cloneSnapshot(snapshot);
+  const target = draft.players.find((player) => player.id === playerId);
+
+  if (!target) {
+    return draft;
+  }
+
+  if (draft.room.status === "lobby") {
+    const remainingPlayers = draft.players.filter((player) => player.id !== playerId);
+    const hostId =
+      draft.room.hostId === playerId
+        ? getReplacementHostId(remainingPlayers, playerId)
+        : draft.room.hostId;
+
+    return appendEvents(
+      updateRoom(
+        {
+          ...draft,
+          players: syncHostFlags(remainingPlayers, hostId),
+        },
+        { hostId }
+      ),
+      [createGameEvent("inactive", `${target.name} saiu da sala`, target.id)]
+    );
+  }
+
+  const players = draft.players.map((player) =>
+    player.id === playerId
+      ? {
+          ...player,
+          isConnected: false,
+          isInactive: true,
+        }
+      : player
+  );
+  const hostId =
+    draft.room.hostId === playerId ? getReplacementHostId(players, playerId) : draft.room.hostId;
+
+  let nextSnapshot = appendEvents(
+    updateRoom(
+      {
+        ...draft,
+        players: syncHostFlags(players, hostId),
+      },
+      { hostId }
+    ),
+    [createGameEvent("inactive", `${target.name} saiu da sala`, target.id)]
+  );
+
+  if (nextSnapshot.room.status === "betting" && nextSnapshot.room.currentTurnPlayerId === target.id) {
+    nextSnapshot = autoSubmitCurrentBid(nextSnapshot);
+  }
+
+  if (nextSnapshot.room.status === "playing" && nextSnapshot.room.currentTurnPlayerId === target.id) {
+    const leavingPlayer = nextSnapshot.players.find((player) => player.id === target.id);
+    const fallbackCard = leavingPlayer?.hand[0];
+
+    if (fallbackCard) {
+      nextSnapshot = playCard(nextSnapshot, target.id, fallbackCard.id);
+    }
+  }
+
+  return nextSnapshot;
+}
+
 export function playCard(snapshot: GameSnapshot, playerId: string, cardId: string): GameSnapshot {
   ensureStatus(snapshot, ["playing"]);
 
@@ -874,23 +967,28 @@ export function setPlayerConnection(
 ): GameSnapshot {
   const draft = cloneSnapshot(snapshot);
   const targetPlayer = draft.players.find((player) => player.id === playerId);
+  const players = draft.players.map((player) =>
+    player.id === playerId
+      ? {
+          ...player,
+          isConnected,
+          isInactive: !isConnected,
+          lastSeenAt: isConnected ? nowIso() : player.lastSeenAt,
+        }
+      : player
+  );
+  const hostId =
+    !isConnected && draft.room.hostId === playerId
+      ? getReplacementHostId(players, playerId)
+      : draft.room.hostId;
 
   return appendEvents(
     updateRoom(
       {
         ...draft,
-        players: draft.players.map((player) =>
-          player.id === playerId
-            ? {
-                ...player,
-                isConnected,
-                isInactive: !isConnected,
-                lastSeenAt: isConnected ? nowIso() : player.lastSeenAt,
-              }
-            : player
-        ),
+        players: syncHostFlags(players, hostId),
       },
-      {}
+      { hostId }
     ),
     !isConnected && targetPlayer && targetPlayer.isConnected
       ? [createGameEvent("inactive", `${targetPlayer.name} esta inativo`, targetPlayer.id)]

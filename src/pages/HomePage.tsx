@@ -19,10 +19,9 @@ import { isSupabaseConfigured } from "../lib/supabaseClient";
 import {
   clearStoredSession,
   createRoom,
-  getStoredSession,
   joinRoom,
+  leaveRoom,
   markPlayerConnection,
-  reconnectPlayer,
   updateRoom,
 } from "../lib/roomService";
 import { subscribeToPresence, subscribeToRoomState } from "../lib/realtimeService";
@@ -55,25 +54,7 @@ export function HomePage() {
   );
 
   useEffect(() => {
-    const session = getStoredSession();
-
-    if (!session || !isSupabaseConfigured) {
-      return;
-    }
-
-    setIsBusy(true);
-    reconnectPlayer(session.roomId, session.playerId)
-      .then((restoredSnapshot) => {
-        if (restoredSnapshot) {
-          setSnapshot(restoredSnapshot);
-          setCurrentPlayerId(session.playerId);
-          setRoomCode(restoredSnapshot.room.code);
-        }
-      })
-      .catch((caughtError: unknown) => {
-        setError(caughtError instanceof Error ? caughtError.message : "Falha ao reconectar.");
-      })
-      .finally(() => setIsBusy(false));
+    clearStoredSession();
   }, []);
 
   useEffect(() => {
@@ -104,6 +85,28 @@ export function HomePage() {
         };
       });
     });
+  }, [currentRoomId, currentPlayerId]);
+
+  useEffect(() => {
+    function handlePageExit() {
+      clearStoredSession();
+
+      if (currentRoomId && currentPlayerId) {
+        void markPlayerConnection(currentRoomId, currentPlayerId, false).catch(() => undefined);
+      }
+    }
+
+    function clearBrowserSession() {
+      clearStoredSession();
+    }
+
+    window.addEventListener("pagehide", handlePageExit);
+    window.addEventListener("beforeunload", clearBrowserSession);
+
+    return () => {
+      window.removeEventListener("pagehide", handlePageExit);
+      window.removeEventListener("beforeunload", clearBrowserSession);
+    };
   }, [currentRoomId, currentPlayerId]);
 
   useEffect(() => {
@@ -170,9 +173,9 @@ export function HomePage() {
 
   async function handleCreateRoom() {
     await runAction(async () => {
-      const nextSnapshot = await createRoom(ensureNickname());
-      setCurrentPlayerId(nextSnapshot.room.hostId);
-      return nextSnapshot;
+      const roomEntry = await createRoom(ensureNickname());
+      setCurrentPlayerId(roomEntry.playerId);
+      return roomEntry.snapshot;
     });
   }
 
@@ -182,10 +185,9 @@ export function HomePage() {
         throw new Error("Digite o código da sala.");
       }
 
-      const nextSnapshot = await joinRoom(roomCode, ensureNickname());
-      const session = getStoredSession();
-      setCurrentPlayerId(session?.playerId ?? null);
-      return nextSnapshot;
+      const roomEntry = await joinRoom(roomCode, ensureNickname());
+      setCurrentPlayerId(roomEntry.playerId);
+      return roomEntry.snapshot;
     });
   }
 
@@ -206,13 +208,16 @@ export function HomePage() {
   }
 
   async function handleLeave() {
-    if (snapshot && currentPlayerId) {
-      await markPlayerConnection(snapshot.room.id, currentPlayerId, false).catch(() => undefined);
-    }
+    const leavingRoomId = snapshot?.room.id ?? null;
+    const leavingPlayerId = currentPlayerId;
 
     clearStoredSession();
     setSnapshot(null);
     setCurrentPlayerId(null);
+
+    if (leavingRoomId && leavingPlayerId) {
+      await leaveRoom(leavingRoomId, leavingPlayerId).catch(() => undefined);
+    }
   }
 
   if (visibleSnapshot?.room.status === "lobby") {

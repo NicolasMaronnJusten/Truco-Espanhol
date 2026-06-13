@@ -1,5 +1,6 @@
 import {
   createInitialSnapshot,
+  leavePlayer,
   reconnectPlayer as reconnectPlayerInSnapshot,
   setPlayerConnection,
 } from "./gameEngine";
@@ -8,10 +9,30 @@ import type { GameSnapshot, Player, RoomRecord } from "../types/game";
 
 const SESSION_KEY = "fodinha-session";
 const MAX_PLAYERS = 10;
+const STORED_SESSION_KEYS = [
+  SESSION_KEY,
+  "roomId",
+  "roomCode",
+  "playerId",
+  "currentRoom",
+  "lastRoom",
+  "activeSession",
+  "fodinha-room-id",
+  "fodinha-room-code",
+  "fodinha-player-id",
+  "fodinha-current-room",
+  "fodinha-last-room",
+  "fodinha-active-session",
+];
 
 type StoredSession = {
   roomId: string;
   roomCode: string;
+  playerId: string;
+};
+
+type RoomEntry = {
+  snapshot: GameSnapshot;
   playerId: string;
 };
 
@@ -82,11 +103,21 @@ function createPlayer(roomId: string, name: string, options?: Partial<Player>): 
 }
 
 export function saveSession(session: StoredSession): void {
-  localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  try {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  } catch {
+    // The in-memory React state is enough for the active tab.
+  }
 }
 
 export function getStoredSession(): StoredSession | null {
-  const rawSession = localStorage.getItem(SESSION_KEY);
+  let rawSession: string | null;
+
+  try {
+    rawSession = localStorage.getItem(SESSION_KEY);
+  } catch {
+    return null;
+  }
 
   if (!rawSession) {
     return null;
@@ -95,13 +126,51 @@ export function getStoredSession(): StoredSession | null {
   try {
     return JSON.parse(rawSession) as StoredSession;
   } catch {
-    localStorage.removeItem(SESSION_KEY);
+    clearStoredSession();
     return null;
   }
 }
 
 export function clearStoredSession(): void {
-  localStorage.removeItem(SESSION_KEY);
+  removeStoredSessionKeys(localStorage);
+  removeStoredSessionKeys(sessionStorage);
+}
+
+function shouldClearStoredSessionKey(key: string): boolean {
+  const normalizedKey = key.trim().toLowerCase();
+
+  if (STORED_SESSION_KEYS.some((sessionKey) => sessionKey.toLowerCase() === normalizedKey)) {
+    return true;
+  }
+
+  return (
+    normalizedKey.includes("fodinha") &&
+    ["session", "room", "player", "active"].some((term) => normalizedKey.includes(term))
+  );
+}
+
+function removeStoredSessionKeys(storage: Storage): void {
+  try {
+    for (const key of STORED_SESSION_KEYS) {
+      storage.removeItem(key);
+    }
+
+    const matchingKeys = [];
+
+    for (let index = 0; index < storage.length; index += 1) {
+      const key = storage.key(index);
+
+      if (key && shouldClearStoredSessionKey(key)) {
+        matchingKeys.push(key);
+      }
+    }
+
+    for (const key of matchingKeys) {
+      storage.removeItem(key);
+    }
+  } catch {
+    // Storage can be unavailable in private browsing modes.
+  }
 }
 
 async function insertRoom(snapshot: GameSnapshot): Promise<GameSnapshot> {
@@ -121,7 +190,7 @@ async function insertRoom(snapshot: GameSnapshot): Promise<GameSnapshot> {
   return snapshot;
 }
 
-export async function createRoom(name: string): Promise<GameSnapshot> {
+export async function createRoom(name: string): Promise<RoomEntry> {
   const roomId = crypto.randomUUID();
   const host = createPlayer(roomId, name, { isHost: true });
   let lastError: unknown;
@@ -133,7 +202,7 @@ export async function createRoom(name: string): Promise<GameSnapshot> {
     try {
       await insertRoom(snapshot);
       saveSession({ roomId, roomCode: code, playerId: host.id });
-      return snapshot;
+      return { snapshot, playerId: host.id };
     } catch (error) {
       lastError = error;
     }
@@ -211,7 +280,7 @@ export async function updateRoom(
   return saveRoom(nextSnapshot);
 }
 
-export async function joinRoom(code: string, name: string): Promise<GameSnapshot> {
+export async function joinRoom(code: string, name: string): Promise<RoomEntry> {
   const room = await fetchRoomByCode(code);
 
   if (!room) {
@@ -242,7 +311,7 @@ export async function joinRoom(code: string, name: string): Promise<GameSnapshot
 
   const savedSnapshot = await saveRoom(snapshot);
   saveSession({ roomId: savedSnapshot.room.id, roomCode: savedSnapshot.room.code, playerId: player.id });
-  return savedSnapshot;
+  return { snapshot: savedSnapshot, playerId: player.id };
 }
 
 export async function reconnectPlayer(
@@ -268,4 +337,8 @@ export async function markPlayerConnection(
   isConnected: boolean
 ): Promise<void> {
   await updateRoom(roomId, (snapshot) => setPlayerConnection(snapshot, playerId, isConnected));
+}
+
+export async function leaveRoom(roomId: string, playerId: string): Promise<void> {
+  await updateRoom(roomId, (snapshot) => leavePlayer(snapshot, playerId));
 }

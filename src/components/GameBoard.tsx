@@ -132,7 +132,7 @@ export function GameBoard({
           className="inline-flex items-center gap-2 rounded-md border border-white/15 px-3 py-2 text-sm text-white/80 transition hover:bg-white/10"
         >
           <LogOut size={16} />
-          sair
+          Sair da sala
         </button>
       </header>
 
