@@ -1,5 +1,6 @@
 import {
   createInitialSnapshot,
+  getTableOrder,
   leavePlayer,
   reconnectPlayer as reconnectPlayerInSnapshot,
   setPlayerConnection,
@@ -304,8 +305,15 @@ export async function joinRoom(code: string, name: string): Promise<RoomEntry> {
     isSpectator: !isLobby,
     lives: isLobby ? 3 : 0,
   });
+  const tableOrder = isLobby
+    ? [player.id, ...getTableOrder(room).filter((playerId) => playerId !== player.id)]
+    : getTableOrder(room);
   const snapshot: GameSnapshot = {
     ...room,
+    room: {
+      ...room.room,
+      tableOrder,
+    },
     players: [...room.players, player],
   };
 

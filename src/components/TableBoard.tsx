@@ -1,5 +1,6 @@
 import { Crown, Heart, ShieldAlert, Trophy, WifiOff } from "lucide-react";
 import { PlayingCard } from "./Card";
+import { getTableOrder } from "../lib/gameEngine";
 import type { VisibleGameSnapshot, VisiblePlayer } from "../types/game";
 
 type TableBoardProps = {
@@ -9,14 +10,40 @@ type TableBoardProps = {
   onKickPlayer?: (playerId: string) => void;
 };
 
-function getOrderedPlayers(players: VisiblePlayer[], currentPlayerId: string | null): VisiblePlayer[] {
-  const currentIndex = players.findIndex((player) => player.id === currentPlayerId);
+function getOrderedPlayers(
+  snapshot: VisibleGameSnapshot,
+  currentPlayerId: string | null
+): VisiblePlayer[] {
+  const playerById = new Map(snapshot.players.map((player) => [player.id, player]));
+  const tableOrder = getTableOrder(snapshot);
+  const fallbackCurrentPlayerId =
+    currentPlayerId && playerById.has(currentPlayerId) ? currentPlayerId : tableOrder[0] ?? null;
 
-  if (currentIndex === -1) {
-    return players;
+  if (!fallbackCurrentPlayerId) {
+    return snapshot.players;
   }
 
-  return [...players.slice(currentIndex), ...players.slice(0, currentIndex)];
+  const currentIndex = tableOrder.indexOf(fallbackCurrentPlayerId);
+
+  if (currentIndex === -1) {
+    return snapshot.players;
+  }
+
+  const orderedPlayers = [];
+
+  for (let offset = 0; offset < tableOrder.length; offset += 1) {
+    const nextIndex = (currentIndex - offset + tableOrder.length) % tableOrder.length;
+    const player = playerById.get(tableOrder[nextIndex]);
+
+    if (player) {
+      orderedPlayers.push(player);
+    }
+  }
+
+  const orderedIds = new Set(orderedPlayers.map((player) => player.id));
+  const missingPlayers = snapshot.players.filter((player) => !orderedIds.has(player.id));
+
+  return [...orderedPlayers, ...missingPlayers];
 }
 
 function canKickPlayer(
@@ -93,7 +120,7 @@ export function TableBoard({
   onPlayCard,
   onKickPlayer,
 }: TableBoardProps) {
-  const orderedPlayers = getOrderedPlayers(snapshot.players, currentPlayerId);
+  const orderedPlayers = getOrderedPlayers(snapshot, currentPlayerId);
   const playerNames = new Map(snapshot.players.map((player) => [player.id, player.name]));
   const currentPlayer = snapshot.players.find((player) => player.id === currentPlayerId);
   const currentPlayerIsHost = currentPlayer?.id === snapshot.room.hostId;

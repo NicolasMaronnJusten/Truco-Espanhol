@@ -34,6 +34,71 @@ function getActivePlayers(players: Player[]): Player[] {
   return players.filter((player) => player.isAlive && !player.isSpectator);
 }
 
+function canTakeTurn(player: Player): boolean {
+  return (
+    player.isAlive &&
+    !player.isSpectator &&
+    player.isConnected &&
+    !player.isInactive &&
+    !player.pendingKick
+  );
+}
+
+function getTurnPlayers(players: Player[]): Player[] {
+  return players.filter(canTakeTurn);
+}
+
+function getFallbackTableOrder(players: Player[]): string[] {
+  return players.map((player) => player.id).reverse();
+}
+
+export function getTableOrder(snapshot: GameSnapshot): string[] {
+  const playerIds = new Set(snapshot.players.map((player) => player.id));
+  const storedOrder = snapshot.room.tableOrder ?? [];
+  const tableOrder = storedOrder.filter(
+    (playerId, index) => playerIds.has(playerId) && storedOrder.indexOf(playerId) === index
+  );
+
+  if (tableOrder.length === playerIds.size) {
+    return tableOrder;
+  }
+
+  const fallbackOrder = getFallbackTableOrder(snapshot.players);
+
+  if (tableOrder.length === 0) {
+    return fallbackOrder;
+  }
+
+  const missingIds = fallbackOrder.filter((playerId) => !tableOrder.includes(playerId));
+  return [...missingIds, ...tableOrder];
+}
+
+export function getNextPlayerToRight(
+  currentPlayerId: string | null,
+  tableOrder: string[],
+  players: Player[],
+  canUsePlayer: (player: Player) => boolean = canTakeTurn
+): Player | null {
+  if (tableOrder.length === 0) {
+    return null;
+  }
+
+  const playerById = new Map(players.map((player) => [player.id, player]));
+  const startIndex = currentPlayerId ? tableOrder.indexOf(currentPlayerId) : -1;
+
+  for (let offset = 1; offset <= tableOrder.length; offset += 1) {
+    const nextIndex =
+      startIndex === -1 ? offset - 1 : (startIndex + offset) % tableOrder.length;
+    const player = playerById.get(tableOrder[nextIndex]);
+
+    if (player && canUsePlayer(player)) {
+      return player;
+    }
+  }
+
+  return null;
+}
+
 function getReplacementHostId(players: Player[], currentHostId: string): string {
   const candidates = players.filter((player) => player.id !== currentHostId);
 
@@ -123,87 +188,58 @@ function getNextHandSize(currentHandSize: number, activePlayerCount: number): nu
 
 function getNextPlayerIdInOrder(
   players: Player[],
+  tableOrder: string[],
   currentPlayerId: string,
   alreadyPlayedIds: Set<string>
 ): string | null {
-  const activePlayers = getActivePlayers(players);
-  const currentIndex = activePlayers.findIndex((player) => player.id === currentPlayerId);
-
-  if (currentIndex === -1) {
-    return activePlayers.find((player) => !alreadyPlayedIds.has(player.id))?.id ?? null;
-  }
-
-  for (let offset = 1; offset <= activePlayers.length; offset += 1) {
-    const candidate = activePlayers[(currentIndex + offset) % activePlayers.length];
-
-    if (!alreadyPlayedIds.has(candidate.id)) {
-      return candidate.id;
-    }
-  }
-
-  return null;
+  return (
+    getNextPlayerToRight(
+      currentPlayerId,
+      tableOrder,
+      players,
+      (player) => canTakeTurn(player) && !alreadyPlayedIds.has(player.id)
+    )?.id ?? null
+  );
 }
 
-function getPlayerAfter(players: Player[], previousPlayerId: string | null): Player | null {
-  const activePlayers = getActivePlayers(players);
-
-  if (activePlayers.length === 0) {
-    return null;
-  }
-
-  if (!previousPlayerId) {
-    return activePlayers[0];
-  }
-
-  const previousIndex = players.findIndex((player) => player.id === previousPlayerId);
-
-  if (previousIndex === -1) {
-    return activePlayers[0];
-  }
-
-  for (let offset = 1; offset <= players.length; offset += 1) {
-    const candidate = players[(previousIndex + offset) % players.length];
-
-    if (candidate.isAlive && !candidate.isSpectator) {
-      return candidate;
-    }
-  }
-
-  return null;
+function getPlayerAfter(
+  players: Player[],
+  tableOrder: string[],
+  previousPlayerId: string | null
+): Player | null {
+  return getNextPlayerToRight(previousPlayerId, tableOrder, players);
 }
 
 function getRoundStarterId(snapshot: GameSnapshot): string | null {
+  const tableOrder = getTableOrder(snapshot);
+
   if (snapshot.room.currentRound === 0) {
-    const activePlayers = getActivePlayers(snapshot.players);
+    const activePlayers = getTurnPlayers(snapshot.players);
     const randomIndex = Math.floor(Math.random() * activePlayers.length);
 
     return activePlayers[randomIndex]?.id ?? null;
   }
 
-  return getPlayerAfter(snapshot.players, snapshot.room.roundStarterPlayerId)?.id ?? null;
+  return getPlayerAfter(snapshot.players, tableOrder, snapshot.room.roundStarterPlayerId)?.id ?? null;
 }
 
-function getNextBidderId(players: Player[], currentPlayerId: string): string | null {
-  const activePlayers = getActivePlayers(players);
-  const currentIndex = activePlayers.findIndex((player) => player.id === currentPlayerId);
-
-  if (currentIndex === -1) {
-    return activePlayers.find((player) => player.bid === null)?.id ?? null;
-  }
-
-  for (let offset = 1; offset <= activePlayers.length; offset += 1) {
-    const candidate = activePlayers[(currentIndex + offset) % activePlayers.length];
-
-    if (candidate.bid === null) {
-      return candidate.id;
-    }
-  }
-
-  return null;
+function getNextBidderId(
+  players: Player[],
+  tableOrder: string[],
+  currentPlayerId: string
+): string | null {
+  return (
+    getNextPlayerToRight(
+      currentPlayerId,
+      tableOrder,
+      players,
+      (player) => canTakeTurn(player) && player.bid === null
+    )?.id ?? null
+  );
 }
 
 function isLastBidder(snapshot: GameSnapshot, playerId: string): boolean {
-  const pendingPlayers = getActivePlayers(snapshot.players).filter((player) => player.bid === null);
+  const pendingPlayers = getTurnPlayers(snapshot.players).filter((player) => player.bid === null);
 
   return pendingPlayers.length === 1 && pendingPlayers[0]?.id === playerId;
 }
@@ -213,7 +249,7 @@ export function getForbiddenFinalBid(snapshot: GameSnapshot, playerId: string): 
     return null;
   }
 
-  const activePlayers = getActivePlayers(snapshot.players);
+  const activePlayers = getTurnPlayers(snapshot.players);
 
   if (!isLastBidder(snapshot, playerId)) {
     return null;
@@ -295,6 +331,8 @@ export function createInitialSnapshot(roomId: string, code: string, host: Player
       currentTrick: 0,
       trickStarterPlayerId: null,
       roundStarterPlayerId: null,
+      firstRoundStarterPlayerId: null,
+      tableOrder: [host.id],
       bidTurnStartedAt: null,
       bidTimeLimitSeconds: DEFAULT_BID_TIME_LIMIT_SECONDS,
       createdAt,
@@ -323,6 +361,7 @@ export function startGame(snapshot: GameSnapshot): GameSnapshot {
     tricksWon: 0,
     hand: [],
   }));
+  const tableOrder = getTableOrder({ ...draft, players: resetPlayers });
 
   const resetSnapshot: GameSnapshot = {
     ...draft,
@@ -337,6 +376,8 @@ export function startGame(snapshot: GameSnapshot): GameSnapshot {
       currentTurnPlayerId: null,
       trickStarterPlayerId: null,
       roundStarterPlayerId: null,
+      firstRoundStarterPlayerId: null,
+      tableOrder,
       bidTurnStartedAt: null,
       bidTimeLimitSeconds: getBidTimeLimitSeconds(draft),
       updatedAt: nowIso(),
@@ -350,7 +391,7 @@ export function startRound(snapshot: GameSnapshot): GameSnapshot {
   ensureStatus(snapshot, ["lobby", "round_result"]);
 
   const draft = cloneSnapshot(snapshot);
-  const activePlayers = getActivePlayers(draft.players);
+  const activePlayers = getTurnPlayers(draft.players);
 
   if (activePlayers.length < MIN_PLAYERS && draft.room.currentRound === 0) {
     throw new Error("A partida precisa de pelo menos 3 jogadores.");
@@ -367,10 +408,12 @@ export function startRound(snapshot: GameSnapshot): GameSnapshot {
   const deck = shuffleDeck(generateDeck());
   const { hands, remainingDeck } = dealCards(deck, activePlayers, handSize);
   const starterId = getRoundStarterId(draft);
+  const firstRoundStarterPlayerId =
+    draft.room.currentRound === 0 ? starterId : draft.room.firstRoundStarterPlayerId ?? null;
   const bidTurnStartedAt = nowIso();
 
   const players = draft.players.map((player) => {
-    if (!player.isAlive || player.isSpectator) {
+    if (!canTakeTurn(player)) {
       return {
         ...player,
         bid: null,
@@ -407,6 +450,7 @@ export function startRound(snapshot: GameSnapshot): GameSnapshot {
       currentTurnPlayerId: starterId,
       trickStarterPlayerId: starterId,
       roundStarterPlayerId: starterId,
+      firstRoundStarterPlayerId,
       bidTurnStartedAt,
     }
   );
@@ -426,7 +470,7 @@ export function submitBid(snapshot: GameSnapshot, playerId: string, bid: number)
   const players = draft.players.map((candidate) =>
     candidate.id === playerId ? { ...candidate, bid } : candidate
   );
-  const nextBidderId = getNextBidderId(players, playerId);
+  const nextBidderId = getNextBidderId(players, getTableOrder(draft), playerId);
   const cardLabel = bid === 1 ? "carta" : "cartas";
 
   return appendEvents(
@@ -496,13 +540,17 @@ export function kickPlayer(
   }
 
   if (draft.room.status === "lobby") {
+    const players = draft.players.filter((player) => player.id !== target.id);
+
     return appendEvents(
       updateRoom(
         {
           ...draft,
-          players: draft.players.filter((player) => player.id !== target.id),
+          players,
         },
-        {}
+        {
+          tableOrder: getTableOrder(draft).filter((playerId) => playerId !== target.id),
+        }
       ),
       [createGameEvent("kick", `${target.name} foi expulso`, target.id)]
     );
@@ -561,6 +609,7 @@ export function leavePlayer(snapshot: GameSnapshot, playerId: string): GameSnaps
       draft.room.hostId === playerId
         ? getReplacementHostId(remainingPlayers, playerId)
         : draft.room.hostId;
+    const tableOrder = getTableOrder(draft).filter((orderedPlayerId) => orderedPlayerId !== playerId);
 
     return appendEvents(
       updateRoom(
@@ -568,7 +617,7 @@ export function leavePlayer(snapshot: GameSnapshot, playerId: string): GameSnaps
           ...draft,
           players: syncHostFlags(remainingPlayers, hostId),
         },
-        { hostId }
+        { hostId, tableOrder }
       ),
       [createGameEvent("inactive", `${target.name} saiu da sala`, target.id)]
     );
@@ -652,7 +701,8 @@ export function playCard(snapshot: GameSnapshot, playerId: string, cardId: strin
   );
   const tableCards = [...draft.gameState.tableCards, tableCard];
   const playedCards = [...draft.gameState.playedCards, tableCard];
-  const activePlayers = getActivePlayers(players);
+  const activePlayers = getTurnPlayers(players);
+  const tableOrder = getTableOrder(draft);
   const currentTrickCards = tableCards.filter(
     (card) => card.trickNumber === draft.room.currentTrick
   );
@@ -670,7 +720,12 @@ export function playCard(snapshot: GameSnapshot, playerId: string, cardId: strin
   if (currentTrickCards.length < activePlayers.length) {
     const alreadyPlayedIds = new Set(currentTrickCards.map((card) => card.playerId));
     return updateRoom(nextSnapshot, {
-      currentTurnPlayerId: getNextPlayerIdInOrder(players, playerId, alreadyPlayedIds),
+      currentTurnPlayerId: getNextPlayerIdInOrder(
+        players,
+        tableOrder,
+        playerId,
+        alreadyPlayedIds
+      ),
     });
   }
 
@@ -805,6 +860,12 @@ export function finishRound(snapshot: GameSnapshot): GameSnapshot {
       ? appendEvents(
           {
             ...snapshotWithEliminations,
+            room: {
+              ...snapshotWithEliminations.room,
+              tableOrder: getTableOrder(snapshotWithEliminations).filter(
+                (playerId) => !kickedPlayerIds.has(playerId)
+              ),
+            },
             players: snapshotWithEliminations.players.filter(
               (player) => !kickedPlayerIds.has(player.id)
             ),
@@ -941,21 +1002,22 @@ function finishAsCompleted(snapshot: GameSnapshot): GameSnapshot {
 
 export function resetGame(snapshot: GameSnapshot): GameSnapshot {
   const draft = cloneSnapshot(snapshot);
+  const players = draft.players.map((player) => ({
+    ...player,
+    lives: STARTING_LIVES,
+    isAlive: true,
+    isSpectator: false,
+    isInactive: false,
+    pendingKick: false,
+    bid: null,
+    tricksWon: 0,
+    hand: [],
+  }));
 
   return updateRoom(
     {
       ...draft,
-      players: draft.players.map((player) => ({
-        ...player,
-        lives: STARTING_LIVES,
-        isAlive: true,
-        isSpectator: false,
-        isInactive: false,
-        pendingKick: false,
-        bid: null,
-        tricksWon: 0,
-        hand: [],
-      })),
+      players,
       gameState: createEmptyGameState(draft.room.id),
     },
     {
@@ -966,6 +1028,8 @@ export function resetGame(snapshot: GameSnapshot): GameSnapshot {
       currentTrick: 0,
       trickStarterPlayerId: null,
       roundStarterPlayerId: null,
+      firstRoundStarterPlayerId: null,
+      tableOrder: getTableOrder({ ...draft, players }),
       bidTurnStartedAt: null,
       bidTimeLimitSeconds: getBidTimeLimitSeconds(draft),
     }
