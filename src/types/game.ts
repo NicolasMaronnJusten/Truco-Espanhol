@@ -72,14 +72,18 @@ export type Player = {
 
 export type RoundPlayerResult = {
   playerId: string;
+  playerName: string;
   name: string;
   bid: number | null;
   tricksWon: number;
   difference: number;
   matchedBid: boolean;
   livesBefore: number;
+  remainingLives: number;
   livesAfter: number;
+  livesLost: number;
   lostLife: number;
+  wasEliminated: boolean;
   eliminated: boolean;
 };
 

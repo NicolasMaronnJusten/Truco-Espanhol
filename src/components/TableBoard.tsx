@@ -47,6 +47,46 @@ function getSeatPosition(index: number, total: number): { left: string; top: str
   };
 }
 
+function getCenterTitle(snapshot: VisibleGameSnapshot): string {
+  if (snapshot.room.status === "betting") {
+    return "Aguardando palpites";
+  }
+
+  if (snapshot.room.status === "playing") {
+    return `Trick ${snapshot.room.currentTrick || "-"} de ${snapshot.room.handSize || "-"}`;
+  }
+
+  if (snapshot.room.status === "round_result") {
+    return "Resultado da rodada";
+  }
+
+  if (snapshot.room.status === "finished") {
+    return "Partida encerrada";
+  }
+
+  return "Aguardando jogadores";
+}
+
+function getCenterSubtitle(snapshot: VisibleGameSnapshot): string {
+  if (snapshot.room.status === "playing") {
+    return "Partida em andamento";
+  }
+
+  if (snapshot.room.status === "round_result") {
+    return `Rodada ${snapshot.room.currentRound}`;
+  }
+
+  return `Rodada ${snapshot.room.currentRound || "-"}`;
+}
+
+function formatLifeLoss(livesLost: number): string {
+  if (livesLost === 0) {
+    return "nao perdeu vida";
+  }
+
+  return `-${livesLost} ${livesLost === 1 ? "vida" : "vidas"}`;
+}
+
 export function TableBoard({
   snapshot,
   currentPlayerId,
@@ -59,19 +99,45 @@ export function TableBoard({
   const currentPlayerIsHost = currentPlayer?.id === snapshot.room.hostId;
   const lastTrick = snapshot.gameState.lastTrick;
   const winnerName = lastTrick?.winnerPlayerId ? playerNames.get(lastTrick.winnerPlayerId) : null;
+  const roundHistory = snapshot.gameState.roundHistory;
+  const latestRound = roundHistory[roundHistory.length - 1];
+  const roundSummaryResults =
+    snapshot.room.status === "round_result" ? (latestRound?.results ?? []) : [];
+  const showRoundSummary = roundSummaryResults.length > 0;
 
   return (
     <section className="table-board relative min-h-[48rem] overflow-hidden rounded-md border border-white/10 bg-mesa-950/45 p-3 sm:min-h-[52rem]">
       <div className="table-oval absolute left-1/2 top-1/2 flex h-[48%] w-[68%] -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center gap-4 rounded-[50%] border border-amber-100/25 p-6 text-center shadow-2xl">
         <div>
           <p className="text-xs uppercase tracking-wide text-amber-100/60">
-            Trick {snapshot.room.currentTrick || "-"} de {snapshot.room.handSize || "-"}
+            {getCenterSubtitle(snapshot)}
           </p>
-          <h2 className="text-xl font-bold text-white">{snapshot.room.status}</h2>
+          <h2 className="text-xl font-bold text-white">{getCenterTitle(snapshot)}</h2>
         </div>
 
         <div className="flex min-h-36 max-w-full flex-wrap items-center justify-center gap-3">
-          {snapshot.gameState.tableCards.length > 0 ? (
+          {showRoundSummary ? (
+            <div className="max-h-44 w-[min(92%,24rem)] overflow-y-auto rounded-md border border-white/10 bg-black/20 p-3 text-left">
+              <div className="space-y-2">
+                {roundSummaryResults.map((result) => (
+                  <div
+                    key={result.playerId}
+                    className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-white/10 pb-2 text-sm last:border-b-0 last:pb-0"
+                  >
+                    <span className="font-semibold text-white">{result.name}</span>
+                    <span className={result.lostLife > 0 ? "text-red-100" : "text-emerald-100"}>
+                      {formatLifeLoss(result.lostLife)}
+                    </span>
+                    {result.eliminated ? (
+                      <span className="w-full text-xs font-semibold text-red-100">
+                        {result.name} foi eliminado
+                      </span>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : snapshot.gameState.tableCards.length > 0 ? (
             snapshot.gameState.tableCards.map((tableCard) => (
               <div key={tableCard.id} className="played-card space-y-1">
                 <PlayingCard card={tableCard.card} compact />
@@ -87,7 +153,7 @@ export function TableBoard({
           )}
         </div>
 
-        {lastTrick ? (
+        {lastTrick && snapshot.room.status !== "round_result" ? (
           <p className="max-w-[18rem] rounded-md border border-white/10 bg-black/20 px-3 py-2 text-xs text-white/70">
             Ultima trick: {winnerName ? `${winnerName} ganhou` : "ninguem ganhou"}
           </p>

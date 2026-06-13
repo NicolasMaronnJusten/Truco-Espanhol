@@ -734,14 +734,18 @@ export function finishRound(snapshot: GameSnapshot): GameSnapshot {
 
     roundResults.push({
       playerId: player.id,
+      playerName: player.name,
       name: player.name,
       bid: player.bid,
       tricksWon: player.tricksWon,
       difference,
       matchedBid,
       livesBefore: player.lives,
+      remainingLives: livesAfter,
       livesAfter,
+      livesLost: lostLife,
       lostLife,
+      wasEliminated: eliminated,
       eliminated,
     });
 
