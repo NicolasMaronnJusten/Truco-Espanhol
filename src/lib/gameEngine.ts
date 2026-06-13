@@ -18,6 +18,10 @@ const STARTING_LIVES = 3;
 const MIN_PLAYERS = 3;
 export const DEFAULT_BID_TIME_LIMIT_SECONDS = 30;
 
+export type BidValidationResult =
+  | { isValid: true; player: Player }
+  | { isValid: false; message: string };
+
 function nowIso(): string {
   return new Date().toISOString();
 }
@@ -198,16 +202,20 @@ function getNextBidderId(players: Player[], currentPlayerId: string): string | n
   return null;
 }
 
+function isLastBidder(snapshot: GameSnapshot, playerId: string): boolean {
+  const pendingPlayers = getActivePlayers(snapshot.players).filter((player) => player.bid === null);
+
+  return pendingPlayers.length === 1 && pendingPlayers[0]?.id === playerId;
+}
+
 export function getForbiddenFinalBid(snapshot: GameSnapshot, playerId: string): number | null {
-  if (snapshot.room.status !== "betting") {
+  if (snapshot.room.status !== "betting" || snapshot.room.handSize <= 1) {
     return null;
   }
 
   const activePlayers = getActivePlayers(snapshot.players);
-  const pendingPlayers = activePlayers.filter((player) => player.bid === null);
-  const isLastBidder = pendingPlayers.length === 1 && pendingPlayers[0]?.id === playerId;
 
-  if (!isLastBidder) {
+  if (!isLastBidder(snapshot, playerId)) {
     return null;
   }
 
@@ -223,6 +231,47 @@ export function getAllowedBids(snapshot: GameSnapshot, playerId: string): number
   return Array.from({ length: snapshot.room.handSize + 1 }, (_, bid) => bid).filter(
     (bid) => bid !== forbiddenBid
   );
+}
+
+export function validateBid(
+  playerId: string,
+  bid: number,
+  snapshot: GameSnapshot
+): BidValidationResult {
+  if (snapshot.room.status !== "betting") {
+    return { isValid: false, message: "Acao indisponivel neste estado da sala." };
+  }
+
+  const player = snapshot.players.find((candidate) => candidate.id === playerId);
+
+  if (!player || !player.isAlive || player.isSpectator) {
+    return { isValid: false, message: "Jogador nao pode palpitar." };
+  }
+
+  if (snapshot.room.currentTurnPlayerId !== playerId) {
+    return { isValid: false, message: "Ainda nao e a vez deste jogador palpitar." };
+  }
+
+  if (player.bid !== null) {
+    return { isValid: false, message: "Este jogador ja deu palpite nesta rodada." };
+  }
+
+  if (!Number.isInteger(bid) || bid < 0 || bid > snapshot.room.handSize) {
+    return { isValid: false, message: "Palpite invalido para esta rodada." };
+  }
+
+  if (snapshot.room.handSize === 1) {
+    return { isValid: true, player };
+  }
+
+  if (isLastBidder(snapshot, playerId) && bid === getForbiddenFinalBid(snapshot, playerId)) {
+    return {
+      isValid: false,
+      message: `A soma dos palpites nao pode fechar ${snapshot.room.handSize}.`,
+    };
+  }
+
+  return { isValid: true, player };
 }
 
 function ensureStatus(snapshot: GameSnapshot, allowedStatuses: RoomStatus[]): void {
@@ -367,28 +416,13 @@ export function submitBid(snapshot: GameSnapshot, playerId: string, bid: number)
   ensureStatus(snapshot, ["betting"]);
 
   const draft = cloneSnapshot(snapshot);
-  const player = draft.players.find((candidate) => candidate.id === playerId);
+  const validation = validateBid(playerId, bid, draft);
 
-  if (!player || !player.isAlive || player.isSpectator) {
-    throw new Error("Jogador não pode palpitar.");
+  if (!validation.isValid) {
+    throw new Error(validation.message);
   }
 
-  if (draft.room.currentTurnPlayerId !== playerId) {
-    throw new Error("Ainda nao e a vez deste jogador palpitar.");
-  }
-
-  if (player.bid !== null) {
-    throw new Error("Este jogador ja deu palpite nesta rodada.");
-  }
-
-  if (!Number.isInteger(bid) || bid < 0 || bid > draft.room.handSize) {
-    throw new Error("Palpite inválido para esta rodada.");
-  }
-
-  if (!getAllowedBids(draft, playerId).includes(bid)) {
-    throw new Error(`A soma dos palpites nao pode fechar ${draft.room.handSize}.`);
-  }
-
+  const { player } = validation;
   const players = draft.players.map((candidate) =>
     candidate.id === playerId ? { ...candidate, bid } : candidate
   );
