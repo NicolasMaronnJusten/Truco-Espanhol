@@ -1,4 +1,4 @@
-import { Crown, Eye, Heart, Trophy, Wifi, WifiOff } from "lucide-react";
+import { Crown, Eye, Heart, ShieldAlert, Trophy, Wifi, WifiOff } from "lucide-react";
 import { PlayingCard } from "./Card";
 import type { VisiblePlayer } from "../types/game";
 
@@ -8,6 +8,8 @@ type PlayerListProps = {
   currentPlayerId: string | null;
   currentTurnPlayerId?: string | null;
   winnerIds?: string[];
+  canKickPlayers?: boolean;
+  onKickPlayer?: (playerId: string) => void;
 };
 
 export function PlayerList({
@@ -16,6 +18,8 @@ export function PlayerList({
   currentPlayerId,
   currentTurnPlayerId,
   winnerIds = [],
+  canKickPlayers = false,
+  onKickPlayer,
 }: PlayerListProps) {
   return (
     <div className="space-y-2">
@@ -23,6 +27,8 @@ export function PlayerList({
         const isCurrent = player.id === currentPlayerId;
         const isTurn = player.id === currentTurnPlayerId;
         const isWinner = winnerIds.includes(player.id);
+        const isInactive = !player.isConnected || Boolean(player.isInactive) || Boolean(player.pendingKick);
+        const canKick = canKickPlayers && !isCurrent && player.id !== hostId;
 
         return (
           <div
@@ -55,7 +61,7 @@ export function PlayerList({
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-white/65">
                   <span className="inline-flex items-center gap-1">
                     {player.isConnected ? <Wifi size={14} /> : <WifiOff size={14} />}
-                    {player.isConnected ? "conectado" : "desconectado"}
+                    {isInactive ? "inativo" : "conectado"}
                   </span>
                   <span className="inline-flex items-center gap-1">
                     <Heart size={14} />
@@ -71,6 +77,20 @@ export function PlayerList({
                 </span>
               ) : null}
             </div>
+            {canKick ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm(`Expulsar ${player.name}?`)) {
+                    onKickPlayer?.(player.id);
+                  }
+                }}
+                className="mt-3 inline-flex items-center gap-2 rounded-md border border-red-200/35 px-3 py-2 text-xs font-semibold text-red-50 transition hover:bg-red-400/15"
+              >
+                <ShieldAlert size={14} />
+                Expulsar
+              </button>
+            ) : null}
             {player.hand.length > 0 || player.hiddenCardCount > 0 ? (
               <div className="mt-3 flex flex-wrap gap-2">
                 {player.hand.map((card) => (

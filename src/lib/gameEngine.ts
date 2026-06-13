@@ -2,6 +2,8 @@ import { dealCards, generateDeck, shuffleDeck } from "./deck";
 import { resolveTrickWithTieCancellation } from "./rules";
 import type {
   Card,
+  GameEvent,
+  GameEventType,
   GameSnapshot,
   GameState,
   Player,
@@ -54,6 +56,31 @@ function createEmptyGameState(roomId: string): GameState {
     winners: [],
     ranking: [],
     lastTrick: null,
+    events: [],
+  };
+}
+
+function createGameEvent(type: GameEventType, message: string, playerId?: string): GameEvent {
+  return {
+    id: crypto.randomUUID(),
+    type,
+    message,
+    playerId,
+    createdAt: nowIso(),
+  };
+}
+
+function appendEvents(snapshot: GameSnapshot, events: GameEvent[]): GameSnapshot {
+  if (events.length === 0) {
+    return snapshot;
+  }
+
+  return {
+    ...snapshot,
+    gameState: {
+      ...snapshot.gameState,
+      events: [...(snapshot.gameState.events ?? []), ...events].slice(-30),
+    },
   };
 }
 
@@ -214,6 +241,8 @@ export function startGame(snapshot: GameSnapshot): GameSnapshot {
     ...player,
     lives: player.isSpectator ? 0 : STARTING_LIVES,
     isAlive: !player.isSpectator,
+    isInactive: false,
+    pendingKick: false,
     bid: null,
     tricksWon: 0,
     hand: [],
@@ -337,22 +366,26 @@ export function submitBid(snapshot: GameSnapshot, playerId: string, bid: number)
     candidate.id === playerId ? { ...candidate, bid } : candidate
   );
   const nextBidderId = getNextBidderId(players, playerId);
+  const cardLabel = bid === 1 ? "carta" : "cartas";
 
-  return updateRoom(
-    {
-      ...draft,
-      players,
-    },
-    !nextBidderId
-      ? {
-          status: "playing",
-          currentTurnPlayerId: draft.room.trickStarterPlayerId,
-          bidTurnStartedAt: null,
-        }
-      : {
-          currentTurnPlayerId: nextBidderId,
-          bidTurnStartedAt: nowIso(),
-        }
+  return appendEvents(
+    updateRoom(
+      {
+        ...draft,
+        players,
+      },
+      !nextBidderId
+        ? {
+            status: "playing",
+            currentTurnPlayerId: draft.room.trickStarterPlayerId,
+            bidTurnStartedAt: null,
+          }
+        : {
+            currentTurnPlayerId: nextBidderId,
+            bidTurnStartedAt: nowIso(),
+          }
+    ),
+    [createGameEvent("bid", `${player.name} cantou ${bid} ${cardLabel}`, player.id)]
   );
 }
 
@@ -378,6 +411,79 @@ export function setBidTimeLimit(snapshot: GameSnapshot, seconds: number): GameSn
   return updateRoom(snapshot, {
     bidTimeLimitSeconds: seconds,
   });
+}
+
+export function kickPlayer(
+  snapshot: GameSnapshot,
+  hostPlayerId: string,
+  targetPlayerId: string
+): GameSnapshot {
+  const draft = cloneSnapshot(snapshot);
+  const host = draft.players.find((player) => player.id === hostPlayerId);
+  const target = draft.players.find((player) => player.id === targetPlayerId);
+
+  if (!host || draft.room.hostId !== host.id) {
+    throw new Error("Apenas o host pode expulsar jogadores.");
+  }
+
+  if (!target) {
+    throw new Error("Jogador nao encontrado.");
+  }
+
+  if (target.id === host.id) {
+    throw new Error("O host nao pode expulsar a si mesmo.");
+  }
+
+  if (draft.room.status === "lobby") {
+    return appendEvents(
+      updateRoom(
+        {
+          ...draft,
+          players: draft.players.filter((player) => player.id !== target.id),
+        },
+        {}
+      ),
+      [createGameEvent("kick", `${target.name} foi expulso`, target.id)]
+    );
+  }
+
+  let nextSnapshot = appendEvents(
+    updateRoom(
+      {
+        ...draft,
+        players: draft.players.map((player) =>
+          player.id === target.id
+            ? {
+                ...player,
+                isConnected: false,
+                isInactive: true,
+                pendingKick: true,
+              }
+            : player
+        ),
+      },
+      {}
+    ),
+    [
+      createGameEvent("inactive", `${target.name} esta inativo`, target.id),
+      createGameEvent("kick", `${target.name} sera removido ao fim da rodada`, target.id),
+    ]
+  );
+
+  if (nextSnapshot.room.status === "betting" && nextSnapshot.room.currentTurnPlayerId === target.id) {
+    nextSnapshot = autoSubmitCurrentBid(nextSnapshot);
+  }
+
+  if (nextSnapshot.room.status === "playing" && nextSnapshot.room.currentTurnPlayerId === target.id) {
+    const kickedPlayer = nextSnapshot.players.find((player) => player.id === target.id);
+    const fallbackCard = kickedPlayer?.hand[0];
+
+    if (fallbackCard) {
+      nextSnapshot = playCard(nextSnapshot, target.id, fallbackCard.id);
+    }
+  }
+
+  return nextSnapshot;
 }
 
 export function playCard(snapshot: GameSnapshot, playerId: string, cardId: string): GameSnapshot {
@@ -488,8 +594,10 @@ export function finishRound(snapshot: GameSnapshot): GameSnapshot {
       return player;
     }
 
-    const matchedBid = player.bid === player.tricksWon;
-    const lostLife = matchedBid ? 0 : 1;
+    const bid = player.bid ?? 0;
+    const difference = Math.abs(bid - player.tricksWon);
+    const matchedBid = difference === 0;
+    const lostLife = difference;
     const livesAfter = Math.max(0, player.lives - lostLife);
     const eliminated = livesAfter <= 0;
 
@@ -502,6 +610,7 @@ export function finishRound(snapshot: GameSnapshot): GameSnapshot {
       name: player.name,
       bid: player.bid,
       tricksWon: player.tricksWon,
+      difference,
       matchedBid,
       livesBefore: player.lives,
       livesAfter,
@@ -515,39 +624,80 @@ export function finishRound(snapshot: GameSnapshot): GameSnapshot {
     };
   });
 
-  const snapshotWithLives: GameSnapshot = {
-    ...draft,
-    players: playersAfterLives,
-    gameState: {
-      ...draft.gameState,
-      roundHistory: [
-        ...draft.gameState.roundHistory,
-        {
-          round: draft.room.currentRound,
-          handSize: draft.room.handSize,
-          finishedAt: nowIso(),
-          results: roundResults,
-        },
-      ],
-    },
-  };
+  const roundEvents = roundResults.flatMap((result) => {
+    const events = [];
 
+    if (result.lostLife > 0) {
+      const lifeLabel = result.lostLife === 1 ? "vida" : "vidas";
+      events.push(
+        createGameEvent(
+          "life_lost",
+          `${result.name} perdeu ${result.lostLife} ${lifeLabel}`,
+          result.playerId
+        )
+      );
+    }
+
+    if (result.eliminated) {
+      events.push(createGameEvent("eliminated", `${result.name} foi eliminado`, result.playerId));
+    }
+
+    return events;
+  });
+
+  const snapshotWithLives: GameSnapshot = appendEvents(
+    {
+      ...draft,
+      players: playersAfterLives,
+      gameState: {
+        ...draft.gameState,
+        roundHistory: [
+          ...draft.gameState.roundHistory,
+          {
+            round: draft.room.currentRound,
+            handSize: draft.room.handSize,
+            finishedAt: nowIso(),
+            results: roundResults,
+          },
+        ],
+      },
+    },
+    [createGameEvent("round_end", "Rodada encerrada"), ...roundEvents]
+  );
+
+  const kickedPlayerIds = new Set(
+    snapshotWithLives.players.filter((player) => player.pendingKick).map((player) => player.id)
+  );
   const snapshotWithEliminations = eliminatePlayers(snapshotWithLives, eliminatedIds);
-  const winnerIds = checkWinners(snapshotWithEliminations);
+  const snapshotWithoutKickedPlayers =
+    kickedPlayerIds.size > 0
+      ? appendEvents(
+          {
+            ...snapshotWithEliminations,
+            players: snapshotWithEliminations.players.filter(
+              (player) => !kickedPlayerIds.has(player.id)
+            ),
+          },
+          snapshotWithEliminations.players
+            .filter((player) => kickedPlayerIds.has(player.id))
+            .map((player) => createGameEvent("kick", `${player.name} foi expulso`, player.id))
+        )
+      : snapshotWithEliminations;
+  const winnerIds = checkWinners(snapshotWithoutKickedPlayers);
 
   if (winnerIds.length > 0) {
-    return finishAsCompleted(snapshotWithEliminations);
+    return finishAsCompleted(snapshotWithoutKickedPlayers);
   }
 
   return updateRoom(
     {
-      ...snapshotWithEliminations,
-      players: snapshotWithEliminations.players.map((player) => ({
+      ...snapshotWithoutKickedPlayers,
+      players: snapshotWithoutKickedPlayers.players.map((player) => ({
         ...player,
         hand: [],
       })),
       gameState: {
-        ...snapshotWithEliminations.gameState,
+        ...snapshotWithoutKickedPlayers.gameState,
         tableCards: [],
         deck: [],
       },
@@ -669,6 +819,8 @@ export function resetGame(snapshot: GameSnapshot): GameSnapshot {
         lives: STARTING_LIVES,
         isAlive: true,
         isSpectator: false,
+        isInactive: false,
+        pendingKick: false,
         bid: null,
         tricksWon: 0,
         hand: [],
@@ -705,6 +857,8 @@ export function reconnectPlayer(
               ...player,
               name: name?.trim() || player.name,
               isConnected: true,
+              isInactive: false,
+              lastSeenAt: nowIso(),
             }
           : player
       ),
@@ -719,15 +873,28 @@ export function setPlayerConnection(
   isConnected: boolean
 ): GameSnapshot {
   const draft = cloneSnapshot(snapshot);
+  const targetPlayer = draft.players.find((player) => player.id === playerId);
 
-  return updateRoom(
-    {
-      ...draft,
-      players: draft.players.map((player) =>
-        player.id === playerId ? { ...player, isConnected } : player
-      ),
-    },
-    {}
+  return appendEvents(
+    updateRoom(
+      {
+        ...draft,
+        players: draft.players.map((player) =>
+          player.id === playerId
+            ? {
+                ...player,
+                isConnected,
+                isInactive: !isConnected,
+                lastSeenAt: isConnected ? nowIso() : player.lastSeenAt,
+              }
+            : player
+        ),
+      },
+      {}
+    ),
+    !isConnected && targetPlayer && targetPlayer.isConnected
+      ? [createGameEvent("inactive", `${targetPlayer.name} esta inativo`, targetPlayer.id)]
+      : []
   );
 }
 

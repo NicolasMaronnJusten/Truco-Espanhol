@@ -1,4 +1,5 @@
 import { Clock, Copy, LogOut, Play, Share2, Users } from "lucide-react";
+import { GameEvents } from "./GameEvents";
 import { PlayerList } from "./PlayerList";
 import { getBidTimeLimitSeconds } from "../lib/gameEngine";
 import type { VisibleGameSnapshot } from "../types/game";
@@ -10,6 +11,7 @@ type LobbyProps = {
   currentPlayerId: string | null;
   onStartGame: () => void;
   onSetBidTimeLimit: (seconds: number) => void;
+  onKickPlayer: (playerId: string) => void;
   onLeave: () => void;
   isBusy?: boolean;
 };
@@ -19,6 +21,7 @@ export function Lobby({
   currentPlayerId,
   onStartGame,
   onSetBidTimeLimit,
+  onKickPlayer,
   onLeave,
   isBusy = false,
 }: LobbyProps) {
@@ -49,6 +52,8 @@ export function Lobby({
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
+      <GameEvents events={snapshot.gameState.events} />
+
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="font-display text-4xl font-bold text-white">Fodinha</h1>
@@ -106,6 +111,8 @@ export function Lobby({
             players={snapshot.players}
             hostId={snapshot.room.hostId}
             currentPlayerId={currentPlayerId}
+            canKickPlayers={Boolean(isHost)}
+            onKickPlayer={onKickPlayer}
           />
         </section>
 

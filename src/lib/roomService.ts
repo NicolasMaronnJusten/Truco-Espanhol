@@ -60,6 +60,8 @@ function makeRoomCode(): string {
 }
 
 function createPlayer(roomId: string, name: string, options?: Partial<Player>): Player {
+  const joinedAt = options?.joinedAt ?? new Date().toISOString();
+
   return {
     id: options?.id ?? crypto.randomUUID(),
     roomId,
@@ -68,11 +70,14 @@ function createPlayer(roomId: string, name: string, options?: Partial<Player>): 
     isAlive: options?.isAlive ?? true,
     isHost: options?.isHost ?? false,
     isConnected: options?.isConnected ?? true,
+    isInactive: options?.isInactive ?? false,
+    pendingKick: options?.pendingKick ?? false,
+    lastSeenAt: options?.lastSeenAt ?? joinedAt,
     isSpectator: options?.isSpectator ?? false,
     bid: options?.bid ?? null,
     tricksWon: options?.tricksWon ?? 0,
     hand: options?.hand ?? [],
-    joinedAt: options?.joinedAt ?? new Date().toISOString(),
+    joinedAt,
   };
 }
 

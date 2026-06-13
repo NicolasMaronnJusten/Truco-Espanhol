@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { LogOut } from "lucide-react";
 import { BettingPanel } from "./BettingPanel";
+import { GameEvents } from "./GameEvents";
 import { Hand } from "./Hand";
-import { PlayerList } from "./PlayerList";
 import { RoundResult } from "./RoundResult";
-import { TrickArea } from "./TrickArea";
+import { TableBoard } from "./TableBoard";
 import { getBidTimeLimitSeconds, getForbiddenFinalBid } from "../lib/gameEngine";
 import type { VisibleGameSnapshot } from "../types/game";
 
@@ -14,6 +14,7 @@ type GameBoardProps = {
   onSubmitBid: (bid: number) => void;
   onPlayCard: (cardId: string) => void;
   onNextRound: () => void;
+  onKickPlayer: (playerId: string) => void;
   onLeave: () => void;
   isBusy?: boolean;
 };
@@ -65,6 +66,7 @@ export function GameBoard({
   onSubmitBid,
   onPlayCard,
   onNextRound,
+  onKickPlayer,
   onLeave,
   isBusy = false,
 }: GameBoardProps) {
@@ -105,8 +107,19 @@ export function GameBoard({
     snapshot.room.updatedAt,
   ]);
 
+  const turnAlertKey =
+    currentPlayer &&
+    snapshot.room.status === "playing" &&
+    snapshot.room.currentTurnPlayerId === currentPlayer.id &&
+    currentPlayer.isAlive &&
+    !currentPlayer.isSpectator
+      ? `${snapshot.room.currentTrick}:${snapshot.gameState.playedCards.length}:${currentPlayer.id}`
+      : null;
+
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
+      <GameEvents events={snapshot.gameState.events} turnAlertKey={turnAlertKey} />
+
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <p className="text-xs uppercase tracking-wide text-amber-200/70">
@@ -148,9 +161,14 @@ export function GameBoard({
         </p>
       </section>
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_23rem]">
+      <TableBoard
+        snapshot={snapshot}
+        currentPlayerId={currentPlayerId}
+        onKickPlayer={onKickPlayer}
+      />
+
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_26rem]">
         <div className="space-y-5">
-          <TrickArea snapshot={snapshot} />
           <BettingPanel
             handSize={snapshot.room.handSize}
             status={snapshot.room.status}
@@ -162,12 +180,6 @@ export function GameBoard({
             disabled={isBusy}
             onSubmitBid={onSubmitBid}
           />
-          <Hand
-            player={currentPlayer}
-            status={snapshot.room.status}
-            isTurn={snapshot.room.currentTurnPlayerId === currentPlayerId}
-            onPlayCard={onPlayCard}
-          />
           <RoundResult
             snapshot={snapshot}
             isHost={Boolean(isHost)}
@@ -176,19 +188,14 @@ export function GameBoard({
           />
         </div>
 
-        <aside className="felt-panel rounded-md p-4">
-          <div className="mb-4 flex items-center justify-between gap-2">
-            <h2 className="text-lg font-semibold text-white">Mesa</h2>
-            <span className="text-xs text-white/60">{snapshot.room.status}</span>
-          </div>
-          <PlayerList
-            players={snapshot.players}
-            hostId={snapshot.room.hostId}
-            currentPlayerId={currentPlayerId}
-            currentTurnPlayerId={snapshot.room.currentTurnPlayerId}
-            winnerIds={snapshot.gameState.winners}
+        <div className="felt-panel rounded-md p-4">
+          <Hand
+            player={currentPlayer}
+            status={snapshot.room.status}
+            isTurn={snapshot.room.currentTurnPlayerId === currentPlayerId}
+            onPlayCard={onPlayCard}
           />
-        </aside>
+        </div>
       </div>
     </main>
   );

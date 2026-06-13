@@ -7,6 +7,7 @@ import { TutorialModal } from "../components/TutorialModal";
 import {
   autoSubmitCurrentBid,
   getBidTimeLimitSeconds,
+  kickPlayer,
   playCard as playCardInSnapshot,
   resetGame,
   setBidTimeLimit,
@@ -196,6 +197,14 @@ export function HomePage() {
     await runAction(() => updateRoom(snapshot.room.id, updater));
   }
 
+  async function handleKickPlayer(playerId: string) {
+    if (!currentPlayerId) {
+      return;
+    }
+
+    await handleSnapshotUpdate((current) => kickPlayer(current, currentPlayerId, playerId));
+  }
+
   async function handleLeave() {
     if (snapshot && currentPlayerId) {
       await markPlayerConnection(snapshot.room.id, currentPlayerId, false).catch(() => undefined);
@@ -218,6 +227,7 @@ export function HomePage() {
           onSetBidTimeLimit={(seconds) =>
             handleSnapshotUpdate((current) => setBidTimeLimit(current, seconds))
           }
+          onKickPlayer={handleKickPlayer}
         />
         {error ? <ErrorToast message={error} /> : null}
       </>
@@ -248,6 +258,7 @@ export function HomePage() {
           isBusy={isBusy}
           onLeave={handleLeave}
           onNextRound={() => handleSnapshotUpdate(startRound)}
+          onKickPlayer={handleKickPlayer}
           onPlayCard={(cardId) =>
             currentPlayerId
               ? handleSnapshotUpdate((current) =>

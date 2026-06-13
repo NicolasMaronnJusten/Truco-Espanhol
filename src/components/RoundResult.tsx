@@ -96,7 +96,7 @@ export function RoundResult({
                 key={result.playerId}
                 className="rounded-md border border-red-200/25 bg-red-950/40 px-3 py-2 text-sm font-semibold text-red-50"
               >
-                {result.name} -{result.lostLife} vida
+                {result.name} -{result.lostLife} {result.lostLife === 1 ? "vida" : "vidas"}
                 {result.eliminated ? " - eliminado" : ""}
               </span>
             ))}
@@ -112,6 +112,7 @@ export function RoundResult({
               <th className="py-2 pr-3 font-medium">Jogador</th>
               <th className="py-2 pr-3 font-medium">Palpite</th>
               <th className="py-2 pr-3 font-medium">Tricks feitas</th>
+              <th className="py-2 pr-3 font-medium">Diferença</th>
               <th className="py-2 pr-3 font-medium">Resultado</th>
               <th className="py-2 pr-3 font-medium">Vidas perdidas</th>
               <th className="py-2 pr-3 font-medium">Vidas</th>
@@ -123,6 +124,9 @@ export function RoundResult({
                 <td className="py-3 pr-3 font-semibold">{result.name}</td>
                 <td className="py-3 pr-3">{result.bid ?? "-"}</td>
                 <td className="py-3 pr-3">{result.tricksWon}</td>
+                <td className="py-3 pr-3">
+                  {result.difference ?? Math.abs((result.bid ?? 0) - result.tricksWon)}
+                </td>
                 <td className="py-3 pr-3">
                   <span className="inline-flex items-center gap-1">
                     {result.matchedBid ? (

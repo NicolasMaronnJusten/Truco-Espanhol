@@ -60,6 +60,9 @@ export type Player = {
   isAlive: boolean;
   isHost: boolean;
   isConnected: boolean;
+  isInactive?: boolean;
+  pendingKick?: boolean;
+  lastSeenAt?: string;
   isSpectator: boolean;
   bid: number | null;
   tricksWon: number;
@@ -72,6 +75,7 @@ export type RoundPlayerResult = {
   name: string;
   bid: number | null;
   tricksWon: number;
+  difference: number;
   matchedBid: boolean;
   livesBefore: number;
   livesAfter: number;
@@ -101,6 +105,23 @@ export type LastTrick = {
   startedByPlayerId: string | null;
 };
 
+export type GameEventType =
+  | "turn"
+  | "bid"
+  | "kick"
+  | "inactive"
+  | "round_end"
+  | "life_lost"
+  | "eliminated";
+
+export type GameEvent = {
+  id: string;
+  type: GameEventType;
+  message: string;
+  createdAt: string;
+  playerId?: string;
+};
+
 export type GameState = {
   roomId: string;
   deck: Card[];
@@ -110,6 +131,7 @@ export type GameState = {
   winners: string[];
   ranking: RankingEntry[];
   lastTrick: LastTrick | null;
+  events?: GameEvent[];
 };
 
 export type GameSnapshot = {

@@ -72,3 +72,73 @@ select:focus-visible {
     linear-gradient(225deg, rgba(255, 250, 240, 0.2) 25%, transparent 25%) 0 0 / 18px 18px,
     #7f1d1d;
 }
+
+.table-board {
+  background:
+    radial-gradient(circle at center, rgba(255, 255, 255, 0.08) 0 1px, transparent 1px 100%) 0 0 / 24px 24px,
+    linear-gradient(135deg, rgba(8, 28, 19, 0.94), rgba(31, 54, 36, 0.88));
+}
+
+.table-oval {
+  background:
+    radial-gradient(ellipse at center, rgba(49, 110, 74, 0.95), rgba(15, 58, 39, 0.98) 62%, rgba(72, 43, 25, 0.96) 64% 100%);
+  box-shadow:
+    inset 0 0 0 0.7rem rgba(77, 45, 18, 0.55),
+    inset 0 0 2rem rgba(0, 0, 0, 0.34),
+    0 1.25rem 3rem rgba(0, 0, 0, 0.34);
+}
+
+.player-seat {
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    background-color 180ms ease,
+    opacity 180ms ease;
+}
+
+.player-seat:hover {
+  transform: translate(-50%, -50%) scale(1.02);
+}
+
+.played-card {
+  animation: played-card-pop 220ms ease-out;
+}
+
+@keyframes played-card-pop {
+  from {
+    transform: translateY(0.8rem) scale(0.92);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+@media (max-width: 740px) {
+  .table-board {
+    min-height: 40rem;
+  }
+
+  .table-oval {
+    width: 74%;
+    height: 40%;
+    padding: 1rem;
+  }
+
+  .player-seat {
+    width: min(47vw, 10.5rem);
+    padding: 0.65rem;
+  }
+
+  .playing-card {
+    min-width: 3.25rem;
+    width: clamp(3.25rem, 16vw, 5.2rem);
+  }
+
+  .playing-card-compact {
+    min-width: 2.35rem;
+    width: clamp(2.35rem, 11vw, 3.4rem);
+  }
+}
