@@ -5,6 +5,7 @@ import type { VisibleGameSnapshot, VisiblePlayer } from "../types/game";
 type TableBoardProps = {
   snapshot: VisibleGameSnapshot;
   currentPlayerId: string | null;
+  onPlayCard: (cardId: string) => void;
   onKickPlayer?: (playerId: string) => void;
 };
 
@@ -46,7 +47,12 @@ function getSeatPosition(index: number, total: number): { left: string; top: str
   };
 }
 
-export function TableBoard({ snapshot, currentPlayerId, onKickPlayer }: TableBoardProps) {
+export function TableBoard({
+  snapshot,
+  currentPlayerId,
+  onPlayCard,
+  onKickPlayer,
+}: TableBoardProps) {
   const orderedPlayers = getOrderedPlayers(snapshot.players, currentPlayerId);
   const playerNames = new Map(snapshot.players.map((player) => [player.id, player.name]));
   const currentPlayer = snapshot.players.find((player) => player.id === currentPlayerId);
@@ -91,6 +97,12 @@ export function TableBoard({ snapshot, currentPlayerId, onKickPlayer }: TableBoa
       {orderedPlayers.map((player, index) => {
         const isCurrent = player.id === currentPlayerId;
         const isTurn = player.id === snapshot.room.currentTurnPlayerId;
+        const canPlay =
+          isCurrent &&
+          isTurn &&
+          snapshot.room.status === "playing" &&
+          player.isAlive &&
+          !player.isSpectator;
         const isHost = player.id === snapshot.room.hostId;
         const isInactive = !player.isConnected || Boolean(player.isInactive) || Boolean(player.pendingKick);
         const isWinner = snapshot.gameState.winners.includes(player.id);
@@ -144,20 +156,20 @@ export function TableBoard({ snapshot, currentPlayerId, onKickPlayer }: TableBoa
             ) : null}
 
             {player.hand.length > 0 || player.hiddenCardCount > 0 ? (
-              isCurrent ? (
-                <p className="mt-3 rounded-md border border-white/10 bg-white/5 px-2 py-1.5 text-center text-xs font-semibold text-white/70">
-                  {player.hand.length + player.hiddenCardCount} na mao
-                </p>
-              ) : (
-                <div className="mt-3 flex max-h-28 flex-wrap justify-center gap-1.5 overflow-hidden">
-                  {player.hand.map((card) => (
-                    <PlayingCard key={card.id} card={card} compact />
-                  ))}
-                  {Array.from({ length: player.hiddenCardCount }).map((_, cardIndex) => (
-                    <PlayingCard key={`${player.id}-hidden-${cardIndex}`} hidden compact />
-                  ))}
-                </div>
-              )
+              <div className="mt-3 flex max-h-28 flex-wrap justify-center gap-1.5 overflow-hidden">
+                {player.hand.map((card) => (
+                  <PlayingCard
+                    key={card.id}
+                    card={card}
+                    compact
+                    disabled={isCurrent && !canPlay}
+                    onClick={canPlay ? () => onPlayCard(card.id) : undefined}
+                  />
+                ))}
+                {Array.from({ length: player.hiddenCardCount }).map((_, cardIndex) => (
+                  <PlayingCard key={`${player.id}-hidden-${cardIndex}`} hidden compact />
+                ))}
+              </div>
             ) : null}
 
             {showKickButton ? (

@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { LogOut } from "lucide-react";
 import { BettingPanel } from "./BettingPanel";
 import { GameEvents } from "./GameEvents";
-import { Hand } from "./Hand";
 import { RoundResult } from "./RoundResult";
 import { TableBoard } from "./TableBoard";
 import { getBidTimeLimitSeconds, getForbiddenFinalBid } from "../lib/gameEngine";
@@ -164,38 +163,28 @@ export function GameBoard({
       <TableBoard
         snapshot={snapshot}
         currentPlayerId={currentPlayerId}
+        onPlayCard={onPlayCard}
         onKickPlayer={onKickPlayer}
       />
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_26rem]">
-        <div className="space-y-5">
-          <BettingPanel
-            handSize={snapshot.room.handSize}
-            status={snapshot.room.status}
-            player={currentPlayer}
-            currentBidderName={currentBidder?.name}
-            forbiddenBid={currentPlayer ? getForbiddenFinalBid(snapshot, currentPlayer.id) : null}
-            secondsLeft={bidSecondsLeft}
-            isTurn={snapshot.room.currentTurnPlayerId === currentPlayerId}
-            disabled={isBusy}
-            onSubmitBid={onSubmitBid}
-          />
-          <RoundResult
-            snapshot={snapshot}
-            isHost={Boolean(isHost)}
-            isBusy={isBusy}
-            onNextRound={onNextRound}
-          />
-        </div>
-
-        <div className="felt-panel rounded-md p-4">
-          <Hand
-            player={currentPlayer}
-            status={snapshot.room.status}
-            isTurn={snapshot.room.currentTurnPlayerId === currentPlayerId}
-            onPlayCard={onPlayCard}
-          />
-        </div>
+      <div className="space-y-5">
+        <BettingPanel
+          handSize={snapshot.room.handSize}
+          status={snapshot.room.status}
+          player={currentPlayer}
+          currentBidderName={currentBidder?.name}
+          forbiddenBid={currentPlayer ? getForbiddenFinalBid(snapshot, currentPlayer.id) : null}
+          secondsLeft={bidSecondsLeft}
+          isTurn={snapshot.room.currentTurnPlayerId === currentPlayerId}
+          disabled={isBusy}
+          onSubmitBid={onSubmitBid}
+        />
+        <RoundResult
+          snapshot={snapshot}
+          isHost={Boolean(isHost)}
+          isBusy={isBusy}
+          onNextRound={onNextRound}
+        />
       </div>
     </main>
   );
