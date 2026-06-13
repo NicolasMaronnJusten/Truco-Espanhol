@@ -144,14 +144,20 @@ export function TableBoard({ snapshot, currentPlayerId, onKickPlayer }: TableBoa
             ) : null}
 
             {player.hand.length > 0 || player.hiddenCardCount > 0 ? (
-              <div className="mt-3 flex max-h-28 flex-wrap justify-center gap-1.5 overflow-hidden">
-                {player.hand.map((card) => (
-                  <PlayingCard key={card.id} card={card} compact />
-                ))}
-                {Array.from({ length: player.hiddenCardCount }).map((_, cardIndex) => (
-                  <PlayingCard key={`${player.id}-hidden-${cardIndex}`} hidden compact />
-                ))}
-              </div>
+              isCurrent ? (
+                <p className="mt-3 rounded-md border border-white/10 bg-white/5 px-2 py-1.5 text-center text-xs font-semibold text-white/70">
+                  {player.hand.length + player.hiddenCardCount} na mao
+                </p>
+              ) : (
+                <div className="mt-3 flex max-h-28 flex-wrap justify-center gap-1.5 overflow-hidden">
+                  {player.hand.map((card) => (
+                    <PlayingCard key={card.id} card={card} compact />
+                  ))}
+                  {Array.from({ length: player.hiddenCardCount }).map((_, cardIndex) => (
+                    <PlayingCard key={`${player.id}-hidden-${cardIndex}`} hidden compact />
+                  ))}
+                </div>
+              )
             ) : null}
 
             {showKickButton ? (
