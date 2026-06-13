@@ -14,6 +14,7 @@ import type {
 
 const STARTING_LIVES = 3;
 const MIN_PLAYERS = 3;
+export const DEFAULT_BID_TIME_LIMIT_SECONDS = 30;
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -25,6 +26,11 @@ function cloneSnapshot(snapshot: GameSnapshot): GameSnapshot {
 
 function getActivePlayers(players: Player[]): Player[] {
   return players.filter((player) => player.isAlive && !player.isSpectator);
+}
+
+export function getBidTimeLimitSeconds(snapshot: GameSnapshot): number {
+  const value = snapshot.room.bidTimeLimitSeconds;
+  return Number.isFinite(value) && value >= 5 ? value : DEFAULT_BID_TIME_LIMIT_SECONDS;
 }
 
 function updateRoom(snapshot: GameSnapshot, updates: Partial<Room>): GameSnapshot {
@@ -80,6 +86,88 @@ function getNextPlayerIdInOrder(
   return null;
 }
 
+function getPlayerAfter(players: Player[], previousPlayerId: string | null): Player | null {
+  const activePlayers = getActivePlayers(players);
+
+  if (activePlayers.length === 0) {
+    return null;
+  }
+
+  if (!previousPlayerId) {
+    return activePlayers[0];
+  }
+
+  const previousIndex = players.findIndex((player) => player.id === previousPlayerId);
+
+  if (previousIndex === -1) {
+    return activePlayers[0];
+  }
+
+  for (let offset = 1; offset <= players.length; offset += 1) {
+    const candidate = players[(previousIndex + offset) % players.length];
+
+    if (candidate.isAlive && !candidate.isSpectator) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+function getRoundStarterId(snapshot: GameSnapshot): string | null {
+  if (snapshot.room.currentRound === 0) {
+    return getActivePlayers(snapshot.players)[0]?.id ?? null;
+  }
+
+  return getPlayerAfter(snapshot.players, snapshot.room.roundStarterPlayerId)?.id ?? null;
+}
+
+function getNextBidderId(players: Player[], currentPlayerId: string): string | null {
+  const activePlayers = getActivePlayers(players);
+  const currentIndex = activePlayers.findIndex((player) => player.id === currentPlayerId);
+
+  if (currentIndex === -1) {
+    return activePlayers.find((player) => player.bid === null)?.id ?? null;
+  }
+
+  for (let offset = 1; offset <= activePlayers.length; offset += 1) {
+    const candidate = activePlayers[(currentIndex + offset) % activePlayers.length];
+
+    if (candidate.bid === null) {
+      return candidate.id;
+    }
+  }
+
+  return null;
+}
+
+export function getForbiddenFinalBid(snapshot: GameSnapshot, playerId: string): number | null {
+  if (snapshot.room.status !== "betting") {
+    return null;
+  }
+
+  const activePlayers = getActivePlayers(snapshot.players);
+  const pendingPlayers = activePlayers.filter((player) => player.bid === null);
+  const isLastBidder = pendingPlayers.length === 1 && pendingPlayers[0]?.id === playerId;
+
+  if (!isLastBidder) {
+    return null;
+  }
+
+  const currentBidTotal = activePlayers.reduce((total, player) => total + (player.bid ?? 0), 0);
+  const forbiddenBid = snapshot.room.handSize - currentBidTotal;
+
+  return forbiddenBid >= 0 && forbiddenBid <= snapshot.room.handSize ? forbiddenBid : null;
+}
+
+export function getAllowedBids(snapshot: GameSnapshot, playerId: string): number[] {
+  const forbiddenBid = getForbiddenFinalBid(snapshot, playerId);
+
+  return Array.from({ length: snapshot.room.handSize + 1 }, (_, bid) => bid).filter(
+    (bid) => bid !== forbiddenBid
+  );
+}
+
 function ensureStatus(snapshot: GameSnapshot, allowedStatuses: RoomStatus[]): void {
   if (!allowedStatuses.includes(snapshot.room.status)) {
     throw new Error("Ação indisponível neste estado da sala.");
@@ -100,6 +188,9 @@ export function createInitialSnapshot(roomId: string, code: string, host: Player
       currentTurnPlayerId: null,
       currentTrick: 0,
       trickStarterPlayerId: null,
+      roundStarterPlayerId: null,
+      bidTurnStartedAt: null,
+      bidTimeLimitSeconds: DEFAULT_BID_TIME_LIMIT_SECONDS,
       createdAt,
       updatedAt: createdAt,
     },
@@ -137,6 +228,9 @@ export function startGame(snapshot: GameSnapshot): GameSnapshot {
       currentTrick: 0,
       currentTurnPlayerId: null,
       trickStarterPlayerId: null,
+      roundStarterPlayerId: null,
+      bidTurnStartedAt: null,
+      bidTimeLimitSeconds: getBidTimeLimitSeconds(draft),
       updatedAt: nowIso(),
     },
   };
@@ -164,7 +258,8 @@ export function startRound(snapshot: GameSnapshot): GameSnapshot {
       : getNextHandSize(draft.room.handSize, activePlayers.length);
   const deck = shuffleDeck(generateDeck());
   const { hands, remainingDeck } = dealCards(deck, activePlayers, handSize);
-  const starterId = activePlayers[0]?.id ?? null;
+  const starterId = getRoundStarterId(draft);
+  const bidTurnStartedAt = nowIso();
 
   const players = draft.players.map((player) => {
     if (!player.isAlive || player.isSpectator) {
@@ -203,6 +298,8 @@ export function startRound(snapshot: GameSnapshot): GameSnapshot {
       currentTrick: 1,
       currentTurnPlayerId: starterId,
       trickStarterPlayerId: starterId,
+      roundStarterPlayerId: starterId,
+      bidTurnStartedAt,
     }
   );
 }
@@ -217,29 +314,67 @@ export function submitBid(snapshot: GameSnapshot, playerId: string, bid: number)
     throw new Error("Jogador não pode palpitar.");
   }
 
+  if (draft.room.currentTurnPlayerId !== playerId) {
+    throw new Error("Ainda nao e a vez deste jogador palpitar.");
+  }
+
+  if (player.bid !== null) {
+    throw new Error("Este jogador ja deu palpite nesta rodada.");
+  }
+
   if (!Number.isInteger(bid) || bid < 0 || bid > draft.room.handSize) {
     throw new Error("Palpite inválido para esta rodada.");
+  }
+
+  if (!getAllowedBids(draft, playerId).includes(bid)) {
+    throw new Error(`A soma dos palpites nao pode fechar ${draft.room.handSize}.`);
   }
 
   const players = draft.players.map((candidate) =>
     candidate.id === playerId ? { ...candidate, bid } : candidate
   );
-  const allActivePlayersBid = getActivePlayers(players).every(
-    (candidate) => candidate.bid !== null
-  );
+  const nextBidderId = getNextBidderId(players, playerId);
 
   return updateRoom(
     {
       ...draft,
       players,
     },
-    allActivePlayersBid
+    !nextBidderId
       ? {
           status: "playing",
           currentTurnPlayerId: draft.room.trickStarterPlayerId,
+          bidTurnStartedAt: null,
         }
-      : {}
+      : {
+          currentTurnPlayerId: nextBidderId,
+          bidTurnStartedAt: nowIso(),
+        }
   );
+}
+
+export function autoSubmitCurrentBid(snapshot: GameSnapshot): GameSnapshot {
+  if (snapshot.room.status !== "betting" || !snapshot.room.currentTurnPlayerId) {
+    return snapshot;
+  }
+
+  const currentPlayerId = snapshot.room.currentTurnPlayerId;
+  const allowedBids = getAllowedBids(snapshot, currentPlayerId);
+  const fallbackBid = allowedBids.includes(0) ? 0 : allowedBids[0];
+
+  return submitBid(snapshot, currentPlayerId, fallbackBid ?? 0);
+}
+
+export function setBidTimeLimit(snapshot: GameSnapshot, seconds: number): GameSnapshot {
+  ensureStatus(snapshot, ["lobby"]);
+
+  if (!Number.isInteger(seconds) || seconds < 5 || seconds > 120) {
+    throw new Error("Tempo de palpite invalido.");
+  }
+
+  return updateRoom(snapshot, {
+    bidTimeLimitSeconds: seconds,
+  });
 }
 
 export function playCard(snapshot: GameSnapshot, playerId: string, cardId: string): GameSnapshot {
@@ -418,6 +553,7 @@ export function finishRound(snapshot: GameSnapshot): GameSnapshot {
       status: "round_result",
       currentTurnPlayerId: null,
       trickStarterPlayerId: null,
+      bidTurnStartedAt: null,
     }
   );
 }
@@ -514,6 +650,7 @@ function finishAsCompleted(snapshot: GameSnapshot): GameSnapshot {
       status: "finished",
       currentTurnPlayerId: null,
       trickStarterPlayerId: null,
+      bidTurnStartedAt: null,
     }
   );
 }
@@ -542,6 +679,9 @@ export function resetGame(snapshot: GameSnapshot): GameSnapshot {
       currentTurnPlayerId: null,
       currentTrick: 0,
       trickStarterPlayerId: null,
+      roundStarterPlayerId: null,
+      bidTurnStartedAt: null,
+      bidTimeLimitSeconds: getBidTimeLimitSeconds(draft),
     }
   );
 }

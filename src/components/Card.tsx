@@ -1,5 +1,5 @@
-import { SUIT_ICONS } from "../lib/deck";
-import type { Card as CardType } from "../types/game";
+import { SUIT_LABELS } from "../lib/deck";
+import type { Card as CardType, Suit } from "../types/game";
 
 type PlayingCardProps = {
   card?: CardType | null;
@@ -9,12 +9,66 @@ type PlayingCardProps = {
   onClick?: () => void;
 };
 
+function cx(...classes: Array<string | false | undefined>): string {
+  return classes.filter(Boolean).join(" ");
+}
+
 function cardTone(card: CardType): string {
   return card.suit === "ouro" || card.suit === "calice" ? "text-carta-red" : "text-carta-ink";
 }
 
-function cx(...classes: Array<string | false | undefined>): string {
-  return classes.filter(Boolean).join(" ");
+function cardValueLabel(card: CardType): string {
+  return card.value === "A" ? "AS" : card.value;
+}
+
+function getPipCount(card: CardType): number {
+  return card.value === "A" ? 1 : Number(card.value);
+}
+
+function isCourtCard(card: CardType): boolean {
+  return card.value === "10" || card.value === "11" || card.value === "12";
+}
+
+function SuitMark({ suit, compact = false }: { suit: Suit; compact?: boolean }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cx(
+        "spanish-suit-mark",
+        `spanish-suit-${suit}`,
+        compact && "spanish-suit-mark-compact"
+      )}
+    >
+      <span className="spanish-suit-detail" />
+    </span>
+  );
+}
+
+function NumberedCardFace({ card, compact = false }: { card: CardType; compact?: boolean }) {
+  const pipCount = getPipCount(card);
+
+  return (
+    <div className={cx("spanish-card-field", compact && "spanish-card-field-compact")}>
+      {Array.from({ length: pipCount }).map((_, index) => (
+        <SuitMark key={`${card.id}-${index}`} suit={card.suit} compact={compact || pipCount > 5} />
+      ))}
+    </div>
+  );
+}
+
+function CourtCardFace({ card, compact = false }: { card: CardType; compact?: boolean }) {
+  const title = card.value === "10" ? "Sota" : card.value === "11" ? "Cavalo" : "Rei";
+
+  return (
+    <div className={cx("spanish-court-card", `spanish-court-${card.suit}`, compact && "spanish-court-compact")}>
+      <div className="spanish-court-head" />
+      <div className="spanish-court-body">
+        <span className="spanish-court-sash" />
+        <SuitMark suit={card.suit} compact={compact} />
+      </div>
+      <span className="spanish-court-title">{title}</span>
+    </div>
+  );
 }
 
 export function PlayingCard({
@@ -59,27 +113,25 @@ export function PlayingCard({
   }
 
   const cardClassName = cx(
-    "playing-card relative flex shrink-0 flex-col justify-between overflow-hidden rounded-md border border-zinc-300 bg-carta-paper p-2 text-left text-carta-ink shadow-card",
+    "playing-card spanish-card relative flex shrink-0 flex-col justify-between overflow-hidden rounded-md border border-zinc-300 bg-carta-paper p-2 text-left text-carta-ink shadow-card",
     compact && "playing-card-compact p-1.5",
     onClick && "transition hover:-translate-y-1 hover:shadow-xl disabled:hover:translate-y-0",
     disabled && "cursor-not-allowed opacity-70"
   );
   const cardContent = (
     <>
-      <span className={cx("text-[0.72rem] font-bold leading-tight", cardTone(card))}>
-        {card.label}
+      <span className={cx("spanish-card-corner spanish-card-corner-top", cardTone(card))}>
+        <strong>{cardValueLabel(card)}</strong>
+        <small>{SUIT_LABELS[card.suit]}</small>
       </span>
-      <span
-        className={cx(
-          "grid place-items-center rounded border border-current/15 bg-white/55 font-display leading-none",
-          compact ? "text-2xl" : "text-4xl",
-          cardTone(card)
-        )}
-      >
-        {SUIT_ICONS[card.suit]}
-      </span>
-      <span className={cx("text-right text-xs font-semibold", cardTone(card))}>
-        {card.value === "A" ? "Ás" : card.value}
+      {isCourtCard(card) ? (
+        <CourtCardFace card={card} compact={compact} />
+      ) : (
+        <NumberedCardFace card={card} compact={compact} />
+      )}
+      <span className={cx("spanish-card-corner spanish-card-corner-bottom", cardTone(card))}>
+        <strong>{cardValueLabel(card)}</strong>
+        <small>{SUIT_LABELS[card.suit]}</small>
       </span>
     </>
   );

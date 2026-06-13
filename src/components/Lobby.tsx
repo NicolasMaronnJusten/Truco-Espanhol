@@ -1,11 +1,15 @@
-import { Copy, LogOut, Play, Share2, Users } from "lucide-react";
+import { Clock, Copy, LogOut, Play, Share2, Users } from "lucide-react";
 import { PlayerList } from "./PlayerList";
+import { getBidTimeLimitSeconds } from "../lib/gameEngine";
 import type { VisibleGameSnapshot } from "../types/game";
+
+const BID_TIME_OPTIONS = [10, 15, 20, 30, 45, 60, 90, 120];
 
 type LobbyProps = {
   snapshot: VisibleGameSnapshot;
   currentPlayerId: string | null;
   onStartGame: () => void;
+  onSetBidTimeLimit: (seconds: number) => void;
   onLeave: () => void;
   isBusy?: boolean;
 };
@@ -14,6 +18,7 @@ export function Lobby({
   snapshot,
   currentPlayerId,
   onStartGame,
+  onSetBidTimeLimit,
   onLeave,
   isBusy = false,
 }: LobbyProps) {
@@ -21,6 +26,7 @@ export function Lobby({
   const currentPlayer = snapshot.players.find((player) => player.id === currentPlayerId);
   const isHost = currentPlayer?.id === snapshot.room.hostId;
   const canStart = isHost && seatedPlayers.length >= 3;
+  const bidTimeLimitSeconds = getBidTimeLimitSeconds(snapshot);
 
   async function copyCode() {
     await navigator.clipboard.writeText(snapshot.room.code);
@@ -113,6 +119,24 @@ export function Lobby({
               Aguardando pelo menos 3 jogadores.
             </p>
           ) : null}
+          <label className="mt-5 block">
+            <span className="mb-2 inline-flex items-center gap-2 text-sm font-medium text-white/75">
+              <Clock size={16} />
+              Tempo de palpite
+            </span>
+            <select
+              value={bidTimeLimitSeconds}
+              disabled={!isHost || isBusy}
+              onChange={(event) => onSetBidTimeLimit(Number(event.target.value))}
+              className="w-full rounded-md border border-white/15 bg-white px-3 py-3 text-mesa-950 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {BID_TIME_OPTIONS.map((seconds) => (
+                <option key={seconds} value={seconds}>
+                  {seconds}s
+                </option>
+              ))}
+            </select>
+          </label>
           <button
             type="button"
             disabled={!canStart || isBusy}

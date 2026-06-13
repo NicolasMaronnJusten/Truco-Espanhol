@@ -1,9 +1,11 @@
+import { useEffect, useState } from "react";
 import { LogOut } from "lucide-react";
 import { BettingPanel } from "./BettingPanel";
 import { Hand } from "./Hand";
 import { PlayerList } from "./PlayerList";
 import { RoundResult } from "./RoundResult";
 import { TrickArea } from "./TrickArea";
+import { getBidTimeLimitSeconds, getForbiddenFinalBid } from "../lib/gameEngine";
 import type { VisibleGameSnapshot } from "../types/game";
 
 type GameBoardProps = {
@@ -31,9 +33,13 @@ function getStatusMessage(snapshot: VisibleGameSnapshot, currentPlayerId: string
   }
 
   if (snapshot.room.status === "betting") {
-    return currentPlayer.bid === null
-      ? "Sua vez de apostar"
-      : "Aguardando outros jogadores apostarem";
+    if (currentPlayer.bid !== null) {
+      return `Palpite enviado: ${currentPlayer.bid}`;
+    }
+
+    return snapshot.room.currentTurnPlayerId === currentPlayer.id
+      ? "Sua vez de palpitar"
+      : "Aguardando seu turno de palpite";
   }
 
   if (snapshot.room.status === "playing") {
@@ -66,6 +72,38 @@ export function GameBoard({
   const isHost = currentPlayer?.id === snapshot.room.hostId;
   const activePlayers = snapshot.players.filter((player) => player.isAlive && !player.isSpectator);
   const eliminatedPlayers = snapshot.players.filter((player) => !player.isAlive && player.isSpectator);
+  const currentBidder = snapshot.players.find(
+    (player) => player.id === snapshot.room.currentTurnPlayerId
+  );
+  const bidTimeLimitSeconds = getBidTimeLimitSeconds(snapshot);
+  const [bidSecondsLeft, setBidSecondsLeft] = useState(bidTimeLimitSeconds);
+
+  useEffect(() => {
+    if (snapshot.room.status !== "betting") {
+      setBidSecondsLeft(bidTimeLimitSeconds);
+      return undefined;
+    }
+
+    const turnStartedAt = snapshot.room.bidTurnStartedAt ?? snapshot.room.updatedAt;
+
+    function updateSecondsLeft() {
+      const startedAtMs = new Date(turnStartedAt).getTime();
+      const elapsedSeconds = Number.isFinite(startedAtMs)
+        ? Math.floor((Date.now() - startedAtMs) / 1000)
+        : 0;
+      setBidSecondsLeft(Math.max(0, bidTimeLimitSeconds - elapsedSeconds));
+    }
+
+    updateSecondsLeft();
+    const intervalId = window.setInterval(updateSecondsLeft, 500);
+
+    return () => window.clearInterval(intervalId);
+  }, [
+    bidTimeLimitSeconds,
+    snapshot.room.bidTurnStartedAt,
+    snapshot.room.status,
+    snapshot.room.updatedAt,
+  ]);
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
@@ -117,6 +155,10 @@ export function GameBoard({
             handSize={snapshot.room.handSize}
             status={snapshot.room.status}
             player={currentPlayer}
+            currentBidderName={currentBidder?.name}
+            forbiddenBid={currentPlayer ? getForbiddenFinalBid(snapshot, currentPlayer.id) : null}
+            secondsLeft={bidSecondsLeft}
+            isTurn={snapshot.room.currentTurnPlayerId === currentPlayerId}
             disabled={isBusy}
             onSubmitBid={onSubmitBid}
           />

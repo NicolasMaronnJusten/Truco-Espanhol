@@ -5,8 +5,11 @@ import { GameBoard } from "../components/GameBoard";
 import { Lobby } from "../components/Lobby";
 import { TutorialModal } from "../components/TutorialModal";
 import {
+  autoSubmitCurrentBid,
+  getBidTimeLimitSeconds,
   playCard as playCardInSnapshot,
   resetGame,
+  setBidTimeLimit,
   startGame,
   startRound,
   submitBid as submitBidInSnapshot,
@@ -102,6 +105,41 @@ export function HomePage() {
     });
   }, [currentRoomId, currentPlayerId]);
 
+  useEffect(() => {
+    if (
+      !snapshot ||
+      !currentPlayerId ||
+      snapshot.room.status !== "betting" ||
+      snapshot.room.hostId !== currentPlayerId ||
+      !snapshot.room.currentTurnPlayerId
+    ) {
+      return undefined;
+    }
+
+    const turnStartedAt = snapshot.room.bidTurnStartedAt ?? snapshot.room.updatedAt;
+    const startedAtMs = new Date(turnStartedAt).getTime();
+    const limitMs = getBidTimeLimitSeconds(snapshot) * 1000;
+    const elapsedMs = Number.isFinite(startedAtMs) ? Date.now() - startedAtMs : 0;
+    const timeoutMs = Math.max(0, limitMs - elapsedMs) + 150;
+    const roomId = snapshot.room.id;
+
+    const timeoutId = window.setTimeout(() => {
+      setError(null);
+      setIsBusy(true);
+      updateRoom(roomId, autoSubmitCurrentBid)
+        .then(setSnapshot)
+        .catch((caughtError) => {
+          setError(caughtError instanceof Error ? caughtError.message : "Algo deu errado.");
+        })
+        .finally(() => setIsBusy(false));
+    }, timeoutMs);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [
+    currentPlayerId,
+    snapshot,
+  ]);
+
   async function runAction(action: () => Promise<GameSnapshot | null | void>) {
     setError(null);
     setIsBusy(true);
@@ -177,6 +215,9 @@ export function HomePage() {
           isBusy={isBusy}
           onLeave={handleLeave}
           onStartGame={() => handleSnapshotUpdate(startGame)}
+          onSetBidTimeLimit={(seconds) =>
+            handleSnapshotUpdate((current) => setBidTimeLimit(current, seconds))
+          }
         />
         {error ? <ErrorToast message={error} /> : null}
       </>

@@ -5,20 +5,20 @@ const VALUES: CardValue[] = ["A", "2", "3", "4", "5", "6", "7", "10", "11", "12"
 
 export const SUIT_LABELS: Record<Suit, string> = {
   espadas: "espadas",
-  ouro: "ouro",
-  calice: "cálice",
-  paus: "paus",
+  ouro: "oros",
+  calice: "copas",
+  paus: "bastos",
 };
 
 export const SUIT_ICONS: Record<Suit, string> = {
-  espadas: "♠",
-  ouro: "◆",
-  calice: "♔",
-  paus: "♣",
+  espadas: "E",
+  ouro: "O",
+  calice: "C",
+  paus: "B",
 };
 
 export function getCardLabel(card: Pick<Card, "suit" | "value">): string {
-  const valueLabel = card.value === "A" ? "Ás" : card.value;
+  const valueLabel = card.value === "A" ? "As" : card.value;
   return `${valueLabel} de ${SUIT_LABELS[card.suit]}`;
 }
 

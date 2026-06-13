@@ -45,6 +45,9 @@ export type Room = {
   currentTurnPlayerId: string | null;
   currentTrick: number;
   trickStarterPlayerId: string | null;
+  roundStarterPlayerId: string | null;
+  bidTurnStartedAt: string | null;
+  bidTimeLimitSeconds: number;
   createdAt: string;
   updatedAt: string;
 };
