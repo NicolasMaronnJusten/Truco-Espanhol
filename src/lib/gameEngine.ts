@@ -116,7 +116,10 @@ function getPlayerAfter(players: Player[], previousPlayerId: string | null): Pla
 
 function getRoundStarterId(snapshot: GameSnapshot): string | null {
   if (snapshot.room.currentRound === 0) {
-    return getActivePlayers(snapshot.players)[0]?.id ?? null;
+    const activePlayers = getActivePlayers(snapshot.players);
+    const randomIndex = Math.floor(Math.random() * activePlayers.length);
+
+    return activePlayers[randomIndex]?.id ?? null;
   }
 
   return getPlayerAfter(snapshot.players, snapshot.room.roundStarterPlayerId)?.id ?? null;
