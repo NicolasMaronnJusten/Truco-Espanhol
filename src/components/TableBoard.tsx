@@ -38,8 +38,8 @@ function canKickPlayer(
 
 function getSeatPosition(index: number, total: number): { left: string; top: string } {
   const angle = Math.PI / 2 + (Math.PI * 2 * index) / Math.max(total, 1);
-  const x = 50 + Math.cos(angle) * 43;
-  const y = 50 + Math.sin(angle) * 38;
+  const x = 50 + Math.cos(angle) * 40;
+  const y = 50 + Math.sin(angle) * 34;
 
   return {
     left: `${x}%`,
@@ -61,7 +61,7 @@ export function TableBoard({
   const winnerName = lastTrick?.winnerPlayerId ? playerNames.get(lastTrick.winnerPlayerId) : null;
 
   return (
-    <section className="table-board relative min-h-[44rem] overflow-hidden rounded-md border border-white/10 bg-mesa-950/45 p-3 sm:min-h-[48rem]">
+    <section className="table-board relative min-h-[48rem] overflow-hidden rounded-md border border-white/10 bg-mesa-950/45 p-3 sm:min-h-[52rem]">
       <div className="table-oval absolute left-1/2 top-1/2 flex h-[48%] w-[68%] -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center gap-4 rounded-[50%] border border-amber-100/25 p-6 text-center shadow-2xl">
         <div>
           <p className="text-xs uppercase tracking-wide text-amber-100/60">

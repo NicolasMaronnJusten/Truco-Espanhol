@@ -118,7 +118,7 @@ select:focus-visible {
 
 @media (max-width: 740px) {
   .table-board {
-    min-height: 40rem;
+    min-height: 44rem;
   }
 
   .table-oval {
