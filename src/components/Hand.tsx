@@ -31,21 +31,21 @@ export function Hand({
     !player.isSpectator;
 
   return (
-    <section className="felt-panel rounded-md p-3 sm:p-4">
+    <section className="felt-panel rounded-md p-2 sm:p-4">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-amber-100/80">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-amber-100/80 sm:text-sm">
           Suas cartas
         </h2>
-        <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-white/70">
+        <span className="rounded-full border border-white/10 px-2.5 py-0.5 text-[0.68rem] text-white/70 sm:px-3 sm:py-1 sm:text-xs">
           {player.hand.length + player.hiddenCardCount} na mao
         </span>
       </div>
 
       <div
-        className="-mx-3 mt-3 overflow-x-auto overscroll-x-contain px-3 pb-2 scroll-smooth touch-pan-x sm:-mx-4 sm:px-4"
+        className="-mx-2 mt-2 overflow-x-auto overscroll-x-contain px-2 pb-1 scroll-smooth touch-pan-x sm:-mx-4 sm:mt-3 sm:px-4 sm:pb-2"
         aria-label="Cartas na mao"
       >
-        <div className="flex min-h-32 w-max min-w-full flex-nowrap items-center gap-3 sm:min-h-36">
+        <div className="flex min-h-24 w-max min-w-full flex-nowrap items-center gap-2.5 sm:min-h-36 sm:gap-3">
           {player.hand.map((card) => (
             <PlayingCard
               key={card.id}

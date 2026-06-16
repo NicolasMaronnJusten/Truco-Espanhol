@@ -149,49 +149,57 @@ export function GameBoard({
   return (
     <main
       className={[
-        "mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8",
-        showHand ? "pb-64" : "",
+        "mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-3 px-2 py-3 sm:gap-5 sm:px-6 sm:py-5 lg:px-8",
+        showHand ? "pb-44 sm:pb-5" : "",
       ].join(" ")}
     >
       <GameEvents events={snapshot.gameState.events} turnAlertKey={turnAlertKey} />
 
-      <header className="flex flex-wrap items-center justify-between gap-4">
+      <header className="flex items-center justify-between gap-2">
         <div>
           <p className="text-xs uppercase tracking-wide text-amber-200/70">
             Sala {snapshot.room.code}
           </p>
-          <h1 className="font-display text-3xl font-bold text-white">Fodinha</h1>
+          <h1 className="font-display text-2xl font-bold text-white sm:text-3xl">Fodinha</h1>
         </div>
         <button
           type="button"
           onClick={onLeave}
-          className="inline-flex items-center gap-2 rounded-md border border-white/15 px-3 py-2 text-sm text-white/80 transition hover:bg-white/10"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-white/15 px-2.5 py-1.5 text-xs text-white/80 transition hover:bg-white/10 sm:gap-2 sm:px-3 sm:py-2 sm:text-sm"
         >
           <LogOut size={16} />
           Sair da sala
         </button>
       </header>
 
-      <section className="felt-panel rounded-md p-4">
-        <div className="grid gap-4 md:grid-cols-4">
+      <section className="felt-panel rounded-md p-2.5 sm:p-4">
+        <div className="grid grid-cols-4 gap-2 sm:gap-4">
           <div>
-            <p className="text-xs uppercase tracking-wide text-white/50">Rodada atual</p>
-            <p className="text-2xl font-bold text-white">{snapshot.room.currentRound}</p>
+            <p className="text-[0.62rem] uppercase tracking-wide text-white/50 sm:text-xs">
+              Rodada
+            </p>
+            <p className="text-lg font-bold text-white sm:text-2xl">{snapshot.room.currentRound}</p>
           </div>
           <div>
-            <p className="text-xs uppercase tracking-wide text-white/50">Quantidade de cartas</p>
-            <p className="text-2xl font-bold text-white">{snapshot.room.handSize}</p>
+            <p className="text-[0.62rem] uppercase tracking-wide text-white/50 sm:text-xs">
+              Cartas
+            </p>
+            <p className="text-lg font-bold text-white sm:text-2xl">{snapshot.room.handSize}</p>
           </div>
           <div>
-            <p className="text-xs uppercase tracking-wide text-white/50">Jogadores vivos</p>
-            <p className="text-2xl font-bold text-white">{activePlayers.length}</p>
+            <p className="text-[0.62rem] uppercase tracking-wide text-white/50 sm:text-xs">
+              Vivos
+            </p>
+            <p className="text-lg font-bold text-white sm:text-2xl">{activePlayers.length}</p>
           </div>
           <div>
-            <p className="text-xs uppercase tracking-wide text-white/50">Eliminados</p>
-            <p className="text-2xl font-bold text-white">{eliminatedPlayers.length}</p>
+            <p className="text-[0.62rem] uppercase tracking-wide text-white/50 sm:text-xs">
+              Elim.
+            </p>
+            <p className="text-lg font-bold text-white sm:text-2xl">{eliminatedPlayers.length}</p>
           </div>
         </div>
-        <p className="mt-4 rounded-md bg-white/10 px-3 py-2 text-sm font-semibold text-amber-100">
+        <p className="mt-2 rounded-md bg-white/10 px-2.5 py-1.5 text-xs font-semibold text-amber-100 sm:mt-4 sm:px-3 sm:py-2 sm:text-sm">
           {getStatusMessage(snapshot, currentPlayerId)}
         </p>
       </section>
@@ -204,7 +212,7 @@ export function GameBoard({
       />
 
       {showHand ? (
-        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-mesa-950/95 px-3 py-3 shadow-2xl backdrop-blur">
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-mesa-950/95 px-2 py-2 shadow-2xl backdrop-blur sm:static sm:border-0 sm:bg-transparent sm:px-0 sm:py-0 sm:shadow-none sm:backdrop-blur-none">
           <div className="mx-auto max-w-7xl">
             <Hand
               player={currentPlayer}

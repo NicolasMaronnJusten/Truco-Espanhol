@@ -133,12 +133,12 @@ select:focus-visible {
   }
 
   .playing-card {
-    min-width: 3.25rem;
-    width: clamp(3.25rem, 16vw, 5.2rem);
+    min-width: 3.1rem;
+    width: clamp(3.1rem, 15vw, 5.1rem);
   }
 
   .playing-card-compact {
-    min-width: 2.35rem;
-    width: clamp(2.35rem, 11vw, 3.4rem);
+    min-width: 2.05rem;
+    width: clamp(2.05rem, 10vw, 3.25rem);
   }
 }

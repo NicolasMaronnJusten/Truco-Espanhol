@@ -172,9 +172,122 @@ export function TableBoard({
   const roundSummaryResults =
     snapshot.room.status === "round_result" ? (latestRound?.results ?? []) : [];
   const showRoundSummary = roundSummaryResults.length > 0;
+  const opponentPlayers = orderedPlayers.filter((player) => player.id !== currentPlayerId);
+  const currentSeatPlayer =
+    orderedPlayers.find((player) => player.id === currentPlayerId) ?? currentPlayer ?? null;
+
+  function renderMobilePlayerCard(player: VisiblePlayer, isCurrentPlayer = false) {
+    const isTurn = player.id === snapshot.room.currentTurnPlayerId;
+    const isHost = player.id === snapshot.room.hostId;
+    const isInactive =
+      !player.isConnected || Boolean(player.isInactive) || Boolean(player.pendingKick);
+    const isWinner = snapshot.gameState.winners.includes(player.id);
+
+    return (
+      <article
+        key={player.id}
+        className={[
+          "min-w-[8.6rem] rounded-md border px-2 py-1.5",
+          isTurn ? "border-amber-300 bg-amber-200/15" : "border-white/10 bg-mesa-900/88",
+          isCurrentPlayer ? "ring-1 ring-emerald-300/70" : "",
+          isInactive ? "opacity-75 grayscale" : "",
+        ].join(" ")}
+      >
+        <div className="flex items-center justify-between gap-1.5">
+          <div className="min-w-0">
+            <div className="flex items-center gap-1">
+              <h3 className="truncate text-xs font-bold text-white">
+                {player.name}
+                {isCurrentPlayer ? " (voce)" : ""}
+              </h3>
+              {isHost ? <Crown size={12} className="shrink-0 text-amber-300" /> : null}
+              {isWinner ? <Trophy size={12} className="shrink-0 text-amber-300" /> : null}
+            </div>
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[0.62rem] text-white/70">
+              <span className="inline-flex items-center gap-0.5">
+                <Heart size={10} />
+                {player.lives}
+              </span>
+              <span>T {player.tricksWon}</span>
+              <span>P {player.bid ?? "-"}</span>
+            </div>
+          </div>
+          {isTurn ? (
+            <span className="rounded-full bg-amber-300 px-1.5 py-0.5 text-[0.56rem] font-bold text-mesa-950">
+              vez
+            </span>
+          ) : null}
+        </div>
+
+        {!isCurrentPlayer && (player.hand.length > 0 || player.hiddenCardCount > 0) ? (
+          <div className="mt-1.5 flex max-w-full flex-nowrap gap-1 overflow-x-auto pb-0.5">
+            {player.hand.map((card) => (
+              <PlayingCard key={card.id} card={card} compact disabled />
+            ))}
+            {Array.from({ length: player.hiddenCardCount }).map((_, cardIndex) => (
+              <PlayingCard key={`${player.id}-mobile-hidden-${cardIndex}`} hidden compact />
+            ))}
+          </div>
+        ) : null}
+      </article>
+    );
+  }
 
   return (
-    <section className="table-board relative min-h-[48rem] overflow-hidden rounded-md border border-white/10 bg-mesa-950/45 p-3 sm:min-h-[52rem]">
+    <>
+      <section className="space-y-2 rounded-md border border-white/10 bg-mesa-950/45 p-2 md:hidden">
+        {opponentPlayers.length > 0 ? (
+          <div className="-mx-2 flex gap-2 overflow-x-auto px-2 pb-1">
+            {opponentPlayers.map((player) => renderMobilePlayerCard(player))}
+          </div>
+        ) : null}
+
+        <div className="rounded-[1.25rem] border border-amber-100/20 bg-mesa-800/80 p-3 text-center shadow-inner">
+          <p className="text-[0.65rem] uppercase tracking-wide text-amber-100/60">
+            {getCenterSubtitle(snapshot)}
+          </p>
+          <h2 className="mt-0.5 text-base font-bold leading-tight text-white">
+            {getCenterTitle(snapshot)}
+          </h2>
+
+          <div className="mt-2 flex min-h-28 max-w-full items-center justify-center gap-2 overflow-x-auto px-1 pb-1">
+            {showRoundSummary ? (
+              <div className="max-h-32 w-full overflow-y-auto rounded-md border border-white/10 bg-black/20 p-2 text-left">
+                <div className="space-y-1.5">
+                  {roundSummaryResults.map((result) => (
+                    <div
+                      key={result.playerId}
+                      className="flex items-center justify-between gap-2 border-b border-white/10 pb-1.5 text-xs last:border-b-0 last:pb-0"
+                    >
+                      <span className="truncate font-semibold text-white">{result.name}</span>
+                      <span className={result.lostLife > 0 ? "text-red-100" : "text-emerald-100"}>
+                        {formatLifeLoss(result.lostLife)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : tableCardsToShow.length > 0 ? (
+              tableCardsToShow.map((tableCard) => (
+                <div key={tableCard.id} className="played-card shrink-0 space-y-1">
+                  <PlayingCard card={tableCard.card} compact />
+                  <p className="max-w-16 truncate text-center text-[0.62rem] font-semibold text-white/75">
+                    {playerNames.get(tableCard.playerId)}
+                  </p>
+                </div>
+              ))
+            ) : (
+              <p className="rounded-md bg-black/20 px-2.5 py-1.5 text-xs text-white/65">
+                Aguardando carta na mesa
+              </p>
+            )}
+          </div>
+        </div>
+
+        {currentSeatPlayer ? renderMobilePlayerCard(currentSeatPlayer, true) : null}
+      </section>
+
+      <section className="table-board relative hidden min-h-[48rem] overflow-hidden rounded-md border border-white/10 bg-mesa-950/45 p-3 md:block sm:min-h-[52rem]">
       <div className="table-oval absolute left-1/2 top-1/2 flex h-[48%] w-[68%] -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center gap-4 rounded-[50%] border border-amber-100/25 p-6 text-center shadow-2xl">
         <div>
           <p className="text-xs uppercase tracking-wide text-amber-100/60">
@@ -325,6 +438,7 @@ export function TableBoard({
           </article>
         );
       })}
-    </section>
+      </section>
+    </>
   );
 }
