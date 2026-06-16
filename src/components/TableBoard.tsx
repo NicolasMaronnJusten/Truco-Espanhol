@@ -75,8 +75,25 @@ function getSeatPosition(index: number, total: number): { left: string; top: str
 }
 
 function getCenterTitle(snapshot: VisibleGameSnapshot): string {
+  const lastTrickMessage = snapshot.gameState.lastTrick?.message;
+  const lastTrickWinnerName = snapshot.gameState.lastTrick?.winnerPlayerId
+    ? snapshot.players.find((player) => player.id === snapshot.gameState.lastTrick?.winnerPlayerId)
+        ?.name
+    : null;
+
   if (snapshot.room.status === "betting") {
     return "Aguardando palpites";
+  }
+
+  if (snapshot.room.isResolvingTrick) {
+    return "Revelando cartas...";
+  }
+
+  if (snapshot.room.isShowingTrickResult) {
+    return (
+      lastTrickMessage ??
+      (lastTrickWinnerName ? `${lastTrickWinnerName} venceu a trick` : "Ninguem venceu a trick")
+    );
   }
 
   if (snapshot.room.status === "playing") {
@@ -95,6 +112,14 @@ function getCenterTitle(snapshot: VisibleGameSnapshot): string {
 }
 
 function getCenterSubtitle(snapshot: VisibleGameSnapshot): string {
+  if (snapshot.room.isResolvingTrick) {
+    return "Verificando vencedor da trick";
+  }
+
+  if (snapshot.room.isShowingTrickResult) {
+    return "Resultado da trick";
+  }
+
   if (snapshot.room.status === "playing") {
     return "Partida em andamento";
   }
@@ -123,6 +148,8 @@ export function TableBoard({
   const orderedPlayers = getOrderedPlayers(snapshot, currentPlayerId);
   const playerNames = new Map(snapshot.players.map((player) => [player.id, player.name]));
   const currentPlayer = snapshot.players.find((player) => player.id === currentPlayerId);
+  const isResolvingTrick = Boolean(snapshot.room.isResolvingTrick);
+  const isTrickLocked = isResolvingTrick || Boolean(snapshot.room.isShowingTrickResult);
   const currentPlayerIsHost = currentPlayer?.id === snapshot.room.hostId;
   const lastTrick = snapshot.gameState.lastTrick;
   const winnerName = lastTrick?.winnerPlayerId ? playerNames.get(lastTrick.winnerPlayerId) : null;
@@ -180,7 +207,7 @@ export function TableBoard({
           )}
         </div>
 
-        {lastTrick && snapshot.room.status !== "round_result" ? (
+        {lastTrick && !isTrickLocked && snapshot.room.status !== "round_result" ? (
           <p className="max-w-[18rem] rounded-md border border-white/10 bg-black/20 px-3 py-2 text-xs text-white/70">
             Ultima trick: {winnerName ? `${winnerName} ganhou` : "ninguem ganhou"}
           </p>
@@ -194,6 +221,7 @@ export function TableBoard({
           isCurrent &&
           isTurn &&
           snapshot.room.status === "playing" &&
+          !isTrickLocked &&
           player.isAlive &&
           !player.isSpectator;
         const isHost = player.id === snapshot.room.hostId;
@@ -202,6 +230,7 @@ export function TableBoard({
         const seatPosition = getSeatPosition(index, orderedPlayers.length);
         const showKickButton =
           Boolean(currentPlayerIsHost && onKickPlayer) &&
+          !isTrickLocked &&
           canKickPlayer(player, snapshot.room.hostId, currentPlayerId, snapshot.room.status);
 
         return (
@@ -248,8 +277,8 @@ export function TableBoard({
               </p>
             ) : null}
 
-            {player.hand.length > 0 || player.hiddenCardCount > 0 ? (
-              <div className="mt-3 flex max-h-28 flex-wrap justify-center gap-1.5 overflow-hidden">
+            {!isCurrent && (player.hand.length > 0 || player.hiddenCardCount > 0) ? (
+              <div className="mt-3 flex max-w-full flex-nowrap justify-start gap-1.5 overflow-x-auto overflow-y-hidden pb-1 scroll-smooth touch-pan-x">
                 {player.hand.map((card) => (
                   <PlayingCard
                     key={card.id}

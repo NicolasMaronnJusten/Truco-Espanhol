@@ -5,6 +5,7 @@ import { GameBoard } from "../components/GameBoard";
 import { Lobby } from "../components/Lobby";
 import { TutorialModal } from "../components/TutorialModal";
 import {
+  advanceAfterTrickResult,
   autoSubmitCurrentBid,
   getBidTimeLimitSeconds,
   kickPlayer,
@@ -14,6 +15,7 @@ import {
   startGame,
   startRound,
   submitBid as submitBidInSnapshot,
+  TRICK_RESULT_DISPLAY_MS,
 } from "../lib/gameEngine";
 import { isSupabaseConfigured } from "../lib/supabaseClient";
 import {
@@ -143,6 +145,44 @@ export function HomePage() {
     currentPlayerId,
     snapshot,
   ]);
+
+  useEffect(() => {
+    if (
+      !snapshot ||
+      !currentPlayerId ||
+      snapshot.room.status !== "playing" ||
+      !snapshot.room.isShowingTrickResult ||
+      snapshot.room.hostId !== currentPlayerId
+    ) {
+      return undefined;
+    }
+
+    const resultEndsAtMs = snapshot.room.trickResultEndsAt
+      ? new Date(snapshot.room.trickResultEndsAt).getTime()
+      : Number.NaN;
+    const resultStartedAtMs = new Date(
+      snapshot.room.trickResultStartedAt ?? snapshot.room.updatedAt
+    ).getTime();
+    const fallbackEndsAtMs = Number.isFinite(resultStartedAtMs)
+      ? resultStartedAtMs + TRICK_RESULT_DISPLAY_MS
+      : Date.now() + TRICK_RESULT_DISPLAY_MS;
+    const endsAtMs = Number.isFinite(resultEndsAtMs) ? resultEndsAtMs : fallbackEndsAtMs;
+    const timeoutMs = Math.max(0, endsAtMs - Date.now()) + 150;
+    const roomId = snapshot.room.id;
+
+    const timeoutId = window.setTimeout(() => {
+      setError(null);
+      setIsBusy(true);
+      updateRoom(roomId, advanceAfterTrickResult)
+        .then(setSnapshot)
+        .catch((caughtError) => {
+          setError(caughtError instanceof Error ? caughtError.message : "Algo deu errado.");
+        })
+        .finally(() => setIsBusy(false));
+    }, timeoutMs);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [currentPlayerId, snapshot]);
 
   async function runAction(action: () => Promise<GameSnapshot | null | void>) {
     setError(null);

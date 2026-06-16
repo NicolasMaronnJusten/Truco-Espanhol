@@ -17,6 +17,7 @@ import type {
 const STARTING_LIVES = 3;
 const MIN_PLAYERS = 3;
 export const DEFAULT_BID_TIME_LIMIT_SECONDS = 30;
+export const TRICK_RESULT_DISPLAY_MS = 5000;
 
 export type BidValidationResult =
   | { isValid: true; player: Player }
@@ -24,6 +25,10 @@ export type BidValidationResult =
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function addMillisecondsIso(date: Date, milliseconds: number): string {
+  return new Date(date.getTime() + milliseconds).toISOString();
 }
 
 function cloneSnapshot(snapshot: GameSnapshot): GameSnapshot {
@@ -152,6 +157,9 @@ function createEmptyGameState(roomId: string): GameState {
     winners: [],
     ranking: [],
     lastTrick: null,
+    lastTrickCards: [],
+    lastTrickWinnerId: null,
+    lastTrickMessage: null,
     events: [],
   };
 }
@@ -164,6 +172,23 @@ function createGameEvent(type: GameEventType, message: string, playerId?: string
     playerId,
     createdAt: nowIso(),
   };
+}
+
+function getTrickResultMessage(tableCards: TableCard[], winnerName: string | null): string {
+  if (!winnerName) {
+    return "Ninguem venceu a trick";
+  }
+
+  const highestPower = Math.max(...tableCards.map((tableCard) => tableCard.card.power));
+  const highestPowerTieCount = tableCards.filter(
+    (tableCard) => tableCard.card.power === highestPower
+  ).length;
+
+  if (highestPowerTieCount > 1) {
+    return `Empate nas cartas mais altas, ${winnerName} venceu com a maior carta restante`;
+  }
+
+  return `${winnerName} venceu a trick`;
 }
 
 function appendEvents(snapshot: GameSnapshot, events: GameEvent[]): GameSnapshot {
@@ -184,6 +209,35 @@ function getNextHandSize(currentHandSize: number, activePlayerCount: number): nu
   const maxHandSize = Math.max(1, Math.floor(40 / activePlayerCount));
   const nextHandSize = currentHandSize + 1;
   return nextHandSize > maxHandSize ? 1 : nextHandSize;
+}
+
+function assertHandsMatchHandSize(
+  players: Player[],
+  handSize: number,
+  currentRound: number
+): void {
+  const activePlayers = getTurnPlayers(players);
+
+  if (import.meta.env.DEV) {
+    console.debug("handSize:", handSize);
+    console.debug("currentRound:", currentRound);
+    console.debug(
+      "players hands:",
+      activePlayers.map((player) => ({
+        name: player.name,
+        handLength: player.hand?.length,
+        hand: player.hand,
+      }))
+    );
+  }
+
+  const playerWithWrongHandSize = activePlayers.find((player) => player.hand.length !== handSize);
+
+  if (playerWithWrongHandSize) {
+    throw new Error(
+      `${playerWithWrongHandSize.name} recebeu ${playerWithWrongHandSize.hand.length} carta(s), mas a rodada exige ${handSize}.`
+    );
+  }
 }
 
 function getNextPlayerIdInOrder(
@@ -335,6 +389,12 @@ export function createInitialSnapshot(roomId: string, code: string, host: Player
       tableOrder: [host.id],
       bidTurnStartedAt: null,
       bidTimeLimitSeconds: DEFAULT_BID_TIME_LIMIT_SECONDS,
+      isResolvingTrick: false,
+      trickRevealStartedAt: null,
+      trickRevealEndsAt: null,
+      isShowingTrickResult: false,
+      trickResultStartedAt: null,
+      trickResultEndsAt: null,
       createdAt,
       updatedAt: createdAt,
     },
@@ -380,6 +440,12 @@ export function startGame(snapshot: GameSnapshot): GameSnapshot {
       tableOrder,
       bidTurnStartedAt: null,
       bidTimeLimitSeconds: getBidTimeLimitSeconds(draft),
+      isResolvingTrick: false,
+      trickRevealStartedAt: null,
+      trickRevealEndsAt: null,
+      isShowingTrickResult: false,
+      trickResultStartedAt: null,
+      trickResultEndsAt: null,
       updatedAt: nowIso(),
     },
   };
@@ -429,6 +495,9 @@ export function startRound(snapshot: GameSnapshot): GameSnapshot {
       hand: hands[player.id] ?? [],
     };
   });
+  const nextRoundNumber = draft.room.currentRound + 1;
+
+  assertHandsMatchHandSize(players, handSize, nextRoundNumber);
 
   return updateRoom(
     {
@@ -444,7 +513,7 @@ export function startRound(snapshot: GameSnapshot): GameSnapshot {
     },
     {
       status: "betting",
-      currentRound: draft.room.currentRound + 1,
+      currentRound: nextRoundNumber,
       handSize,
       currentTrick: 1,
       currentTurnPlayerId: starterId,
@@ -452,6 +521,12 @@ export function startRound(snapshot: GameSnapshot): GameSnapshot {
       roundStarterPlayerId: starterId,
       firstRoundStarterPlayerId,
       bidTurnStartedAt,
+      isResolvingTrick: false,
+      trickRevealStartedAt: null,
+      trickRevealEndsAt: null,
+      isShowingTrickResult: false,
+      trickResultStartedAt: null,
+      trickResultEndsAt: null,
     }
   );
 }
@@ -484,6 +559,12 @@ export function submitBid(snapshot: GameSnapshot, playerId: string, bid: number)
             status: "playing",
             currentTurnPlayerId: draft.room.trickStarterPlayerId,
             bidTurnStartedAt: null,
+            isResolvingTrick: false,
+            trickRevealStartedAt: null,
+            trickRevealEndsAt: null,
+            isShowingTrickResult: false,
+            trickResultStartedAt: null,
+            trickResultEndsAt: null,
           }
         : {
             currentTurnPlayerId: nextBidderId,
@@ -667,6 +748,10 @@ export function playCard(snapshot: GameSnapshot, playerId: string, cardId: strin
 
   const draft = cloneSnapshot(snapshot);
 
+  if (draft.room.isResolvingTrick || draft.room.isShowingTrickResult) {
+    throw new Error("Aguarde a resolucao da trick.");
+  }
+
   if (draft.room.currentTurnPlayerId !== playerId) {
     throw new Error("Ainda não é a vez deste jogador.");
   }
@@ -738,31 +823,85 @@ export function playCard(snapshot: GameSnapshot, playerId: string, cardId: strin
         }
       : candidate
   );
-
   const trickStarterPlayerId = winnerPlayerId ?? draft.room.trickStarterPlayerId;
+  const winnerName = winnerPlayerId
+    ? players.find((candidate) => candidate.id === winnerPlayerId)?.name ?? "Jogador"
+    : null;
+  const resultMessage = getTrickResultMessage(currentTrickCards, winnerName);
   const snapshotAfterTrick: GameSnapshot = {
     ...nextSnapshot,
     players: playersAfterTrick,
     gameState: {
       ...nextSnapshot.gameState,
-      tableCards: [],
       lastTrick: {
         trickNumber: draft.room.currentTrick,
         cards: currentTrickCards,
         winnerPlayerId,
         startedByPlayerId: draft.room.trickStarterPlayerId,
+        message: resultMessage,
       },
+    },
+  };
+  const resultStartedAt = new Date();
+  const snapshotWithResult = updateRoom(snapshotAfterTrick, {
+    currentTurnPlayerId: null,
+    trickStarterPlayerId,
+    isResolvingTrick: false,
+    trickRevealStartedAt: null,
+    trickRevealEndsAt: null,
+    isShowingTrickResult: true,
+    trickResultStartedAt: resultStartedAt.toISOString(),
+    trickResultEndsAt: addMillisecondsIso(resultStartedAt, TRICK_RESULT_DISPLAY_MS),
+  });
+
+  return appendEvents(snapshotWithResult, [
+    createGameEvent("trick", resultMessage, winnerPlayerId ?? undefined),
+  ]);
+}
+
+export function advanceAfterTrickResult(snapshot: GameSnapshot): GameSnapshot {
+  ensureStatus(snapshot, ["playing"]);
+
+  const draft = cloneSnapshot(snapshot);
+
+  if (!draft.room.isShowingTrickResult) {
+    return draft;
+  }
+
+  const resultEndsAtMs = draft.room.trickResultEndsAt
+    ? new Date(draft.room.trickResultEndsAt).getTime()
+    : Number.NaN;
+
+  if (Number.isFinite(resultEndsAtMs) && Date.now() < resultEndsAtMs) {
+    return draft;
+  }
+
+  const winnerPlayerId = draft.gameState.lastTrick?.winnerPlayerId ?? null;
+  const trickStarterPlayerId = winnerPlayerId ?? draft.room.trickStarterPlayerId;
+  const snapshotAfterTableClear: GameSnapshot = {
+    ...draft,
+    gameState: {
+      ...draft.gameState,
+      tableCards: draft.gameState.tableCards.filter(
+        (card) => card.trickNumber !== draft.room.currentTrick
+      ),
     },
   };
 
   if (draft.room.currentTrick >= draft.room.handSize) {
-    return finishRound(snapshotAfterTrick);
+    return finishRound(snapshotAfterTableClear);
   }
 
-  return updateRoom(snapshotAfterTrick, {
+  return updateRoom(snapshotAfterTableClear, {
     currentTrick: draft.room.currentTrick + 1,
     currentTurnPlayerId: trickStarterPlayerId,
     trickStarterPlayerId,
+    isResolvingTrick: false,
+    trickRevealStartedAt: null,
+    trickRevealEndsAt: null,
+    isShowingTrickResult: false,
+    trickResultStartedAt: null,
+    trickResultEndsAt: null,
   });
 }
 
@@ -899,6 +1038,12 @@ export function finishRound(snapshot: GameSnapshot): GameSnapshot {
       currentTurnPlayerId: null,
       trickStarterPlayerId: null,
       bidTurnStartedAt: null,
+      isResolvingTrick: false,
+      trickRevealStartedAt: null,
+      trickRevealEndsAt: null,
+      isShowingTrickResult: false,
+      trickResultStartedAt: null,
+      trickResultEndsAt: null,
     }
   );
 }
@@ -996,6 +1141,12 @@ function finishAsCompleted(snapshot: GameSnapshot): GameSnapshot {
       currentTurnPlayerId: null,
       trickStarterPlayerId: null,
       bidTurnStartedAt: null,
+      isResolvingTrick: false,
+      trickRevealStartedAt: null,
+      trickRevealEndsAt: null,
+      isShowingTrickResult: false,
+      trickResultStartedAt: null,
+      trickResultEndsAt: null,
     }
   );
 }
@@ -1032,6 +1183,12 @@ export function resetGame(snapshot: GameSnapshot): GameSnapshot {
       tableOrder: getTableOrder({ ...draft, players }),
       bidTurnStartedAt: null,
       bidTimeLimitSeconds: getBidTimeLimitSeconds(draft),
+      isResolvingTrick: false,
+      trickRevealStartedAt: null,
+      trickRevealEndsAt: null,
+      isShowingTrickResult: false,
+      trickResultStartedAt: null,
+      trickResultEndsAt: null,
     }
   );
 }

@@ -19,6 +19,8 @@ export type RoomStatus =
   | "round_result"
   | "finished";
 
+export type TrickPhase = "idle" | "playing" | "result";
+
 export type Card = {
   id: string;
   suit: Suit;
@@ -50,6 +52,13 @@ export type Room = {
   tableOrder?: string[];
   bidTurnStartedAt: string | null;
   bidTimeLimitSeconds: number;
+  trickPhase?: TrickPhase;
+  isResolvingTrick?: boolean;
+  trickRevealStartedAt?: string | null;
+  trickRevealEndsAt?: string | null;
+  isShowingTrickResult?: boolean;
+  trickResultStartedAt?: string | null;
+  trickResultEndsAt?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -109,11 +118,13 @@ export type LastTrick = {
   cards: TableCard[];
   winnerPlayerId: string | null;
   startedByPlayerId: string | null;
+  message?: string;
 };
 
 export type GameEventType =
   | "turn"
   | "bid"
+  | "trick"
   | "kick"
   | "inactive"
   | "round_end"
@@ -137,6 +148,9 @@ export type GameState = {
   winners: string[];
   ranking: RankingEntry[];
   lastTrick: LastTrick | null;
+  lastTrickCards: TableCard[];
+  lastTrickWinnerId: string | null;
+  lastTrickMessage: string | null;
   events?: GameEvent[];
 };
 

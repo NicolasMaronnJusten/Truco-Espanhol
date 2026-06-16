@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { LogOut } from "lucide-react";
 import { BettingPanel } from "./BettingPanel";
 import { GameEvents } from "./GameEvents";
+import { Hand } from "./Hand";
 import { RoundResult } from "./RoundResult";
 import { TableBoard } from "./TableBoard";
 import { getBidTimeLimitSeconds, getForbiddenFinalBid } from "../lib/gameEngine";
@@ -20,6 +21,11 @@ type GameBoardProps = {
 
 function getStatusMessage(snapshot: VisibleGameSnapshot, currentPlayerId: string | null): string {
   const currentPlayer = snapshot.players.find((player) => player.id === currentPlayerId);
+  const lastTrickMessage = snapshot.gameState.lastTrick?.message;
+  const lastTrickWinnerName = snapshot.gameState.lastTrick?.winnerPlayerId
+    ? snapshot.players.find((player) => player.id === snapshot.gameState.lastTrick?.winnerPlayerId)
+        ?.name
+    : null;
 
   if (!currentPlayer) {
     return "Você está assistindo";
@@ -30,6 +36,17 @@ function getStatusMessage(snapshot: VisibleGameSnapshot, currentPlayerId: string
       (entry) => entry.playerId === currentPlayer.id && entry.reason === "eliminated"
     );
     return wasEliminated ? "Você foi eliminado" : "Você está assistindo";
+  }
+
+  if (snapshot.room.isResolvingTrick) {
+    return "Revelando cartas...";
+  }
+
+  if (snapshot.room.isShowingTrickResult) {
+    return (
+      lastTrickMessage ??
+      (lastTrickWinnerName ? `${lastTrickWinnerName} venceu a trick` : "Ninguem venceu a trick")
+    );
   }
 
   if (snapshot.room.status === "betting") {
@@ -70,6 +87,8 @@ export function GameBoard({
   isBusy = false,
 }: GameBoardProps) {
   const currentPlayer = snapshot.players.find((player) => player.id === currentPlayerId);
+  const isResolvingTrick = Boolean(snapshot.room.isResolvingTrick);
+  const isTrickLocked = isResolvingTrick || Boolean(snapshot.room.isShowingTrickResult);
   const isHost = currentPlayer?.id === snapshot.room.hostId;
   const activePlayers = snapshot.players.filter((player) => player.isAlive && !player.isSpectator);
   const eliminatedPlayers = snapshot.players.filter((player) => !player.isAlive && player.isSpectator);
@@ -78,6 +97,10 @@ export function GameBoard({
   );
   const bidTimeLimitSeconds = getBidTimeLimitSeconds(snapshot);
   const [bidSecondsLeft, setBidSecondsLeft] = useState(bidTimeLimitSeconds);
+  const showHand =
+    Boolean(currentPlayer) &&
+    (snapshot.room.status === "betting" || snapshot.room.status === "playing") &&
+    ((currentPlayer?.hand.length ?? 0) + (currentPlayer?.hiddenCardCount ?? 0) > 0);
 
   useEffect(() => {
     if (snapshot.room.status !== "betting") {
@@ -109,6 +132,7 @@ export function GameBoard({
   const turnAlertKey =
     currentPlayer &&
     snapshot.room.status === "playing" &&
+    !isTrickLocked &&
     snapshot.room.currentTurnPlayerId === currentPlayer.id &&
     currentPlayer.isAlive &&
     !currentPlayer.isSpectator
@@ -116,7 +140,12 @@ export function GameBoard({
       : null;
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
+    <main
+      className={[
+        "mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8",
+        showHand ? "pb-64" : "",
+      ].join(" ")}
+    >
       <GameEvents events={snapshot.gameState.events} turnAlertKey={turnAlertKey} />
 
       <header className="flex flex-wrap items-center justify-between gap-4">
@@ -166,6 +195,21 @@ export function GameBoard({
         onPlayCard={onPlayCard}
         onKickPlayer={onKickPlayer}
       />
+
+      {showHand ? (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-mesa-950/95 px-3 py-3 shadow-2xl backdrop-blur">
+          <div className="mx-auto max-w-7xl">
+            <Hand
+              player={currentPlayer}
+              status={snapshot.room.status}
+              isTurn={snapshot.room.currentTurnPlayerId === currentPlayerId}
+              isResolvingTrick={isTrickLocked}
+              disabled={isBusy}
+              onPlayCard={onPlayCard}
+            />
+          </div>
+        </div>
+      ) : null}
 
       <div className="space-y-5">
         <BettingPanel
