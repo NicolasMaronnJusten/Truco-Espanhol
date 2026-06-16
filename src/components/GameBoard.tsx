@@ -21,10 +21,14 @@ type GameBoardProps = {
 
 function getStatusMessage(snapshot: VisibleGameSnapshot, currentPlayerId: string | null): string {
   const currentPlayer = snapshot.players.find((player) => player.id === currentPlayerId);
-  const lastTrickMessage = snapshot.gameState.lastTrick?.message;
-  const lastTrickWinnerName = snapshot.gameState.lastTrick?.winnerPlayerId
-    ? snapshot.players.find((player) => player.id === snapshot.gameState.lastTrick?.winnerPlayerId)
-        ?.name
+  const isTrickResultPhase =
+    snapshot.room.trickPhase === "result" || Boolean(snapshot.room.isShowingTrickResult);
+  const lastTrickMessage =
+    snapshot.gameState.lastTrickMessage ?? snapshot.gameState.lastTrick?.message;
+  const lastTrickWinnerId =
+    snapshot.gameState.lastTrickWinnerId ?? snapshot.gameState.lastTrick?.winnerPlayerId;
+  const lastTrickWinnerName = lastTrickWinnerId
+    ? snapshot.players.find((player) => player.id === lastTrickWinnerId)?.name
     : null;
 
   if (!currentPlayer) {
@@ -42,7 +46,7 @@ function getStatusMessage(snapshot: VisibleGameSnapshot, currentPlayerId: string
     return "Revelando cartas...";
   }
 
-  if (snapshot.room.isShowingTrickResult) {
+  if (isTrickResultPhase) {
     return (
       lastTrickMessage ??
       (lastTrickWinnerName ? `${lastTrickWinnerName} venceu a trick` : "Ninguem venceu a trick")
@@ -88,7 +92,10 @@ export function GameBoard({
 }: GameBoardProps) {
   const currentPlayer = snapshot.players.find((player) => player.id === currentPlayerId);
   const isResolvingTrick = Boolean(snapshot.room.isResolvingTrick);
-  const isTrickLocked = isResolvingTrick || Boolean(snapshot.room.isShowingTrickResult);
+  const isTrickLocked =
+    isResolvingTrick ||
+    snapshot.room.trickPhase === "result" ||
+    Boolean(snapshot.room.isShowingTrickResult);
   const isHost = currentPlayer?.id === snapshot.room.hostId;
   const activePlayers = snapshot.players.filter((player) => player.isAlive && !player.isSpectator);
   const eliminatedPlayers = snapshot.players.filter((player) => !player.isAlive && player.isSpectator);

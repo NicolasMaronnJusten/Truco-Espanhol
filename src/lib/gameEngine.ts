@@ -389,6 +389,7 @@ export function createInitialSnapshot(roomId: string, code: string, host: Player
       tableOrder: [host.id],
       bidTurnStartedAt: null,
       bidTimeLimitSeconds: DEFAULT_BID_TIME_LIMIT_SECONDS,
+      trickPhase: "idle",
       isResolvingTrick: false,
       trickRevealStartedAt: null,
       trickRevealEndsAt: null,
@@ -440,6 +441,7 @@ export function startGame(snapshot: GameSnapshot): GameSnapshot {
       tableOrder,
       bidTurnStartedAt: null,
       bidTimeLimitSeconds: getBidTimeLimitSeconds(draft),
+      trickPhase: "idle",
       isResolvingTrick: false,
       trickRevealStartedAt: null,
       trickRevealEndsAt: null,
@@ -509,6 +511,9 @@ export function startRound(snapshot: GameSnapshot): GameSnapshot {
         tableCards: [],
         playedCards: [],
         lastTrick: null,
+        lastTrickCards: [],
+        lastTrickWinnerId: null,
+        lastTrickMessage: null,
       },
     },
     {
@@ -521,6 +526,7 @@ export function startRound(snapshot: GameSnapshot): GameSnapshot {
       roundStarterPlayerId: starterId,
       firstRoundStarterPlayerId,
       bidTurnStartedAt,
+      trickPhase: "idle",
       isResolvingTrick: false,
       trickRevealStartedAt: null,
       trickRevealEndsAt: null,
@@ -559,6 +565,7 @@ export function submitBid(snapshot: GameSnapshot, playerId: string, bid: number)
             status: "playing",
             currentTurnPlayerId: draft.room.trickStarterPlayerId,
             bidTurnStartedAt: null,
+            trickPhase: "playing",
             isResolvingTrick: false,
             trickRevealStartedAt: null,
             trickRevealEndsAt: null,
@@ -748,7 +755,11 @@ export function playCard(snapshot: GameSnapshot, playerId: string, cardId: strin
 
   const draft = cloneSnapshot(snapshot);
 
-  if (draft.room.isResolvingTrick || draft.room.isShowingTrickResult) {
+  if (
+    draft.room.trickPhase === "result" ||
+    draft.room.isResolvingTrick ||
+    draft.room.isShowingTrickResult
+  ) {
     throw new Error("Aguarde a resolucao da trick.");
   }
 
@@ -811,6 +822,7 @@ export function playCard(snapshot: GameSnapshot, playerId: string, cardId: strin
         playerId,
         alreadyPlayedIds
       ),
+      trickPhase: "playing",
     });
   }
 
@@ -833,6 +845,9 @@ export function playCard(snapshot: GameSnapshot, playerId: string, cardId: strin
     players: playersAfterTrick,
     gameState: {
       ...nextSnapshot.gameState,
+      lastTrickCards: currentTrickCards,
+      lastTrickWinnerId: winnerPlayerId,
+      lastTrickMessage: resultMessage,
       lastTrick: {
         trickNumber: draft.room.currentTrick,
         cards: currentTrickCards,
@@ -846,6 +861,7 @@ export function playCard(snapshot: GameSnapshot, playerId: string, cardId: strin
   const snapshotWithResult = updateRoom(snapshotAfterTrick, {
     currentTurnPlayerId: null,
     trickStarterPlayerId,
+    trickPhase: "result",
     isResolvingTrick: false,
     trickRevealStartedAt: null,
     trickRevealEndsAt: null,
@@ -864,7 +880,7 @@ export function advanceAfterTrickResult(snapshot: GameSnapshot): GameSnapshot {
 
   const draft = cloneSnapshot(snapshot);
 
-  if (!draft.room.isShowingTrickResult) {
+  if (draft.room.trickPhase !== "result" && !draft.room.isShowingTrickResult) {
     return draft;
   }
 
@@ -876,7 +892,8 @@ export function advanceAfterTrickResult(snapshot: GameSnapshot): GameSnapshot {
     return draft;
   }
 
-  const winnerPlayerId = draft.gameState.lastTrick?.winnerPlayerId ?? null;
+  const winnerPlayerId =
+    draft.gameState.lastTrickWinnerId ?? draft.gameState.lastTrick?.winnerPlayerId ?? null;
   const trickStarterPlayerId = winnerPlayerId ?? draft.room.trickStarterPlayerId;
   const snapshotAfterTableClear: GameSnapshot = {
     ...draft,
@@ -896,6 +913,7 @@ export function advanceAfterTrickResult(snapshot: GameSnapshot): GameSnapshot {
     currentTrick: draft.room.currentTrick + 1,
     currentTurnPlayerId: trickStarterPlayerId,
     trickStarterPlayerId,
+    trickPhase: "playing",
     isResolvingTrick: false,
     trickRevealStartedAt: null,
     trickRevealEndsAt: null,
@@ -1038,6 +1056,7 @@ export function finishRound(snapshot: GameSnapshot): GameSnapshot {
       currentTurnPlayerId: null,
       trickStarterPlayerId: null,
       bidTurnStartedAt: null,
+      trickPhase: "idle",
       isResolvingTrick: false,
       trickRevealStartedAt: null,
       trickRevealEndsAt: null,
@@ -1141,6 +1160,7 @@ function finishAsCompleted(snapshot: GameSnapshot): GameSnapshot {
       currentTurnPlayerId: null,
       trickStarterPlayerId: null,
       bidTurnStartedAt: null,
+      trickPhase: "idle",
       isResolvingTrick: false,
       trickRevealStartedAt: null,
       trickRevealEndsAt: null,
@@ -1183,6 +1203,7 @@ export function resetGame(snapshot: GameSnapshot): GameSnapshot {
       tableOrder: getTableOrder({ ...draft, players }),
       bidTurnStartedAt: null,
       bidTimeLimitSeconds: getBidTimeLimitSeconds(draft),
+      trickPhase: "idle",
       isResolvingTrick: false,
       trickRevealStartedAt: null,
       trickRevealEndsAt: null,

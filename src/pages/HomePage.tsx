@@ -151,7 +151,7 @@ export function HomePage() {
       !snapshot ||
       !currentPlayerId ||
       snapshot.room.status !== "playing" ||
-      !snapshot.room.isShowingTrickResult ||
+      (snapshot.room.trickPhase !== "result" && !snapshot.room.isShowingTrickResult) ||
       snapshot.room.hostId !== currentPlayerId
     ) {
       return undefined;

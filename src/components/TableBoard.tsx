@@ -75,10 +75,14 @@ function getSeatPosition(index: number, total: number): { left: string; top: str
 }
 
 function getCenterTitle(snapshot: VisibleGameSnapshot): string {
-  const lastTrickMessage = snapshot.gameState.lastTrick?.message;
-  const lastTrickWinnerName = snapshot.gameState.lastTrick?.winnerPlayerId
-    ? snapshot.players.find((player) => player.id === snapshot.gameState.lastTrick?.winnerPlayerId)
-        ?.name
+  const isTrickResultPhase =
+    snapshot.room.trickPhase === "result" || Boolean(snapshot.room.isShowingTrickResult);
+  const lastTrickMessage =
+    snapshot.gameState.lastTrickMessage ?? snapshot.gameState.lastTrick?.message;
+  const lastTrickWinnerId =
+    snapshot.gameState.lastTrickWinnerId ?? snapshot.gameState.lastTrick?.winnerPlayerId;
+  const lastTrickWinnerName = lastTrickWinnerId
+    ? snapshot.players.find((player) => player.id === lastTrickWinnerId)?.name
     : null;
 
   if (snapshot.room.status === "betting") {
@@ -89,7 +93,7 @@ function getCenterTitle(snapshot: VisibleGameSnapshot): string {
     return "Revelando cartas...";
   }
 
-  if (snapshot.room.isShowingTrickResult) {
+  if (isTrickResultPhase) {
     return (
       lastTrickMessage ??
       (lastTrickWinnerName ? `${lastTrickWinnerName} venceu a trick` : "Ninguem venceu a trick")
@@ -116,7 +120,7 @@ function getCenterSubtitle(snapshot: VisibleGameSnapshot): string {
     return "Verificando vencedor da trick";
   }
 
-  if (snapshot.room.isShowingTrickResult) {
+  if (snapshot.room.trickPhase === "result" || snapshot.room.isShowingTrickResult) {
     return "Resultado da trick";
   }
 
@@ -149,10 +153,20 @@ export function TableBoard({
   const playerNames = new Map(snapshot.players.map((player) => [player.id, player.name]));
   const currentPlayer = snapshot.players.find((player) => player.id === currentPlayerId);
   const isResolvingTrick = Boolean(snapshot.room.isResolvingTrick);
-  const isTrickLocked = isResolvingTrick || Boolean(snapshot.room.isShowingTrickResult);
+  const isTrickResultPhase =
+    snapshot.room.trickPhase === "result" || Boolean(snapshot.room.isShowingTrickResult);
+  const isTrickLocked =
+    isResolvingTrick ||
+    isTrickResultPhase;
   const currentPlayerIsHost = currentPlayer?.id === snapshot.room.hostId;
   const lastTrick = snapshot.gameState.lastTrick;
   const winnerName = lastTrick?.winnerPlayerId ? playerNames.get(lastTrick.winnerPlayerId) : null;
+  const tableCardsToShow =
+    snapshot.gameState.tableCards.length > 0
+      ? snapshot.gameState.tableCards
+      : isTrickResultPhase
+        ? (snapshot.gameState.lastTrickCards ?? [])
+        : [];
   const roundHistory = snapshot.gameState.roundHistory;
   const latestRound = roundHistory[roundHistory.length - 1];
   const roundSummaryResults =
@@ -191,8 +205,8 @@ export function TableBoard({
                 ))}
               </div>
             </div>
-          ) : snapshot.gameState.tableCards.length > 0 ? (
-            snapshot.gameState.tableCards.map((tableCard) => (
+          ) : tableCardsToShow.length > 0 ? (
+            tableCardsToShow.map((tableCard) => (
               <div key={tableCard.id} className="played-card space-y-1">
                 <PlayingCard card={tableCard.card} compact />
                 <p className="max-w-20 truncate text-center text-[0.68rem] font-semibold text-white/75">
